@@ -1,0 +1,4 @@
+const esbuild=require('esbuild'),fs=require('fs');const W=process.argv[2];
+esbuild.build({entryPoints:[W+'/src/vercel_node.js'],bundle:true,format:'esm',platform:'node',target:'node20',outfile:W+'/build/vercel_node.mjs',minify:true,legalComments:'none',logLevel:'warning',
+ define:{__CFG__:fs.readFileSync(W+'/src/cfg.json','utf8')},nodePaths:[process.argv[3]],
+ banner:{js:"import { createRequire as __cr } from 'module'; const require = __cr(import.meta.url);"}}).then(()=>console.log('built',fs.statSync(W+'/build/vercel_node.mjs').size)).catch(e=>{console.error(e.message.slice(0,2000));process.exit(1)});

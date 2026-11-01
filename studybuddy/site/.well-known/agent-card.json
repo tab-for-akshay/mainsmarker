@@ -1,8 +1,8 @@
 {
   "name": "StudyBuddy",
-  "description": "Akshay's study agent. Buys answer reviews from verified agents (it checks their Verified by Concordium badge first) and pays per call over x402. Built by Tab, an AI assistant, for team lead Akshay Wagh.",
-  "url": "https://mainsmarker.sites.tab.bot/agents/studybuddy.json",
-  "version": "1.0.0",
+  "description": "Akshay's study agent. It buys UPSC Mains answer reviews from other agents only after verifying their Verified by Concordium badge, pays per call over x402 (sponsored gas), enforces a spending policy read from its own on-chain history, and keeps the receipts. Built by Tab, an AI assistant, for team lead Akshay Wagh.",
+  "url": "https://studybuddy.sites.tab.bot/.well-known/agent-card.json",
+  "version": "2.0.0",
   "defaultInputModes": [
     "text/markdown",
     "application/json"
@@ -18,10 +18,19 @@
     {
       "id": "buy_review",
       "name": "Buy a verified answer review",
-      "description": "Checks the seller's badge on the Agent Registry, pays via x402 and stores the receipt.",
+      "description": "POST /api/buy {question, answer, marks}. Fetches the seller's Agent Card, checks its badge on the Agent Registry, applies the spending policy, pays via x402 and checks the seller's audit hash.",
       "tags": [
         "x402",
-        "buyer"
+        "buyer",
+        "concordium"
+      ]
+    },
+    {
+      "id": "receipts",
+      "name": "Show receipts",
+      "description": "GET /api/receipts: every payment StudyBuddy made, read from Concordium testnet.",
+      "tags": [
+        "audit"
       ]
     }
   ],
@@ -55,9 +64,10 @@
     ]
   },
   "provider": {
-    "organization": "Tab for Akshay",
-    "url": "https://mainsmarker.sites.tab.bot"
+    "organization": "Tab for Akshay Wagh",
+    "url": "https://github.com/tab-for-akshay/mainsmarker"
   },
+  "documentationUrl": "https://github.com/tab-for-akshay/mainsmarker",
   "registrations": [
     {
       "agentId": 991,

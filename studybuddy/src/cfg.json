@@ -1,0 +1,30 @@
+{
+ "accounts": {
+  "facilitator": "3p6DTnSwRwczJL5JxmB89jveUFJq6x6npc1azREG7bzXvQiP6c",
+  "mainsmarker": "4J2SFgeVrLHVqPkb3dczpYKP99wFMm7FDFp3fEPwXMff3ieLi2",
+  "studybuddy": "4L8TkAeST26KMDvTajRZbnqxUYCWGgrBUUzeZkZ1awEKcTt2aG"
+ },
+ "tokens": {
+  "mainsmarker": {
+   "id": 990,
+   "badge": "JyP9Y5PqyaZge2fzDzyQa"
+  },
+  "studybuddy": {
+   "id": 991,
+   "badge": "JyP9Y6VKuc4cU9umTKPns"
+  }
+ },
+ "contracts": {
+  "cis8004": "12802,0",
+  "cis8": "12801,0"
+ },
+ "txs": {
+  "register_mm": "f617962730f5f803b4f893060cf5f90fc68fd53350e74bb382f0f60a0410101b",
+  "seturi_mm": "0e683e9d35458281f5a30053a96cfd07fd0b1f4c0db9d0d54a03c47e135b40ef",
+  "register_sb": "b41da04fc4f4b931c2ade0e62992511573dcf5e98b93413a752d9e181862a6aa",
+  "seturi_sb": "b456b2af2b4cb8166f2cfe05db90a190014def3302091bface5da0c91b755d8a",
+  "x402_test": "9e1b62cd5d2f5fa0bf9d7617fb8eaf09d6c4e7936767956b8b6fc8184a4ffcfa",
+  "seturi_sb_v2": "ba4ddcb5fcc05a72bd9816ee46b1fc7d6661616fb3cb5ab93a4354ce777f73f9"
+ },
+ "studybuddy_url": "https://studybuddy.sites.tab.bot"
+}
