@@ -1,0 +1,20 @@
+{
+  "name": "mainsmarker",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "description": "Accountable AI answer-review agent on Concordium testnet: Agent Registry badge, x402 sponsored payments, on-chain audit log.",
+  "scripts": {
+    "build": "node scripts/build.cjs . ./node_modules"
+  },
+  "dependencies": {
+    "@concordium/web-sdk": "^12.0.2",
+    "@x402/concordium": "^2.29.0",
+    "@x402/core": "^2.29.0",
+    "@scure/bip39": "^2.0.0"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.0"
+  }
+}

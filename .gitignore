@@ -1,0 +1,7 @@
+node_modules/
+build/
+*.secret.*
+.env
+identity.json
+idreq.json
+issuance_url.txt

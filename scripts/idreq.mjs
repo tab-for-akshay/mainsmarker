@@ -1,0 +1,13 @@
+import { createIdentityRequest } from '@concordium/web-sdk';
+import fs from 'fs';
+import { WP, seedHex, j } from './lib.mjs';
+const g = await j(WP+'/v0/global');
+const ips = await j(WP+'/v1/ip_info');
+const ip = ips.find(x=>x.ipInfo.ipIdentity===0);
+const arThreshold = Math.min(Object.keys(ip.arsInfos).length, 2);
+const req = createIdentityRequest({ globalContext: g.value ?? g, ipInfo: ip.ipInfo, arsInfos: ip.arsInfos, seed: seedHex(), net: 'Testnet', identityIndex: 0, arThreshold });
+fs.writeFileSync('idreq.json', JSON.stringify(req));
+const redirect='https://tab-ccd-callback.invalid/cb';
+const params=new URLSearchParams({scope:'identity',response_type:'code',redirect_uri:redirect,state:JSON.stringify({idObjectRequest:req})});
+fs.writeFileSync('issuance_url.txt', ip.metadata.issuanceStart+'?'+params.toString());
+console.log('ok', Object.keys(ip.arsInfos).length, 'ars');

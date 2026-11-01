@@ -1,0 +1,197 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MainsMarker · accountable AI answer review on Concordium</title>
+<meta name="description" content="An AI agent that reviews UPSC Mains answers, gets paid per review over x402, carries a Verified by Concordium badge and logs every review on-chain. Built by Tab, an AI assistant, for team lead Akshay Wagh.">
+<meta property="og:title" content="MainsMarker · accountable AI answer review">
+<meta property="og:description" content="Verified agent · x402 pay-per-review · on-chain audit log (Concordium testnet)">
+<style>
+:root{--bg:#0b1020;--card:#121a33;--ink:#e8ecf8;--mute:#9aa5c4;--acc:#4f8cff;--ok:#2ecc8f;--warn:#f5b84b;--bad:#ff6b6b;--line:#24305a}
+*{box-sizing:border-box}body{margin:0;font:16px/1.55 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:var(--bg);color:var(--ink)}
+a{color:#8fb4ff}header{padding:28px 20px 8px;max-width:1080px;margin:auto}
+h1{font-size:30px;margin:0 0 6px}h1 span{color:var(--acc)}.sub{color:var(--mute);margin:0 0 14px;max-width:760px}
+.pills{display:flex;flex-wrap:wrap;gap:8px}.pill{border:1px solid var(--line);border-radius:999px;padding:5px 12px;font-size:13px;color:var(--mute);background:#0f1730}
+.pill b{color:var(--ink)}.pill.ok{border-color:#1f6b52;color:#bff3dc}.pill.bad{border-color:#6b2a2a;color:#ffd0d0}
+main{max-width:1080px;margin:auto;padding:8px 20px 40px;display:grid;gap:18px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:18px}
+.card h2{margin:0 0 10px;font-size:19px}.grid2{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+@media(max-width:860px){.grid2{grid-template-columns:1fr}}
+label{display:block;font-size:13px;color:var(--mute);margin:10px 0 4px}
+textarea,select,input{width:100%;background:#0b1229;color:var(--ink);border:1px solid var(--line);border-radius:10px;padding:10px;font:inherit}
+textarea{min-height:90px;resize:vertical}#answer{min-height:170px}
+.row{display:flex;gap:10px}.row>*{flex:1}
+button{background:var(--acc);color:#fff;border:0;border-radius:12px;padding:12px 16px;font-weight:600;font-size:16px;cursor:pointer;width:100%;margin-top:12px}
+button:disabled{opacity:.6;cursor:wait}button.ghost{background:transparent;border:1px solid var(--line);color:var(--ink);font-weight:500}
+.steps{list-style:none;padding:0;margin:0}.steps li{display:flex;gap:10px;padding:9px 0;border-bottom:1px dashed var(--line)}
+.dot{width:24px;height:24px;border-radius:50%;flex:0 0 24px;display:grid;place-items:center;font-size:13px;background:#1b2550;color:var(--mute)}
+.done .dot{background:#164a38;color:#bff3dc}.run .dot{background:#22336e;color:#fff;animation:p 1s infinite}.fail .dot{background:#5a1f1f;color:#fff}
+@keyframes p{50%{opacity:.4}}.steps small{color:var(--mute);display:block}
+.score{font-size:44px;font-weight:800}.score small{font-size:18px;color:var(--mute)}
+.rv h3{font-size:14px;color:var(--mute);margin:14px 0 4px;text-transform:uppercase;letter-spacing:.05em}.rv ul{margin:0;padding-left:20px}
+.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12.5px;word-break:break-all}
+table{width:100%;border-collapse:collapse;font-size:14px}th,td{text-align:left;padding:8px 6px;border-bottom:1px solid var(--line);vertical-align:top}th{color:var(--mute);font-weight:500}
+.how{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}@media(max-width:860px){.how{grid-template-columns:1fr 1fr}}
+.how div{background:#0f1730;border:1px solid var(--line);border-radius:12px;padding:12px;font-size:14px}.how b{display:block;margin-bottom:4px}
+pre{background:#0b1229;border:1px solid var(--line);border-radius:10px;padding:12px;overflow:auto;font-size:12.5px}
+.note{font-size:13px;color:var(--mute)}.okt{color:var(--ok)}.badt{color:var(--bad)}
+footer{max-width:1080px;margin:auto;padding:10px 20px 40px;color:var(--mute);font-size:14px}
+</style>
+</head>
+<body>
+<header>
+  <h1>Mains<span>Marker</span></h1>
+  <p class="sub">An AI agent that reviews UPSC Mains answers and can prove what it did. It carries a <b>Verified by Concordium</b> badge, other agents pay it per review over <b>x402</b> (gas sponsored), and every review leaves an <b>on-chain audit record</b> with the model used.</p>
+  <div class="pills">
+    <span class="pill" id="pBadge">Badge: checking…</span>
+    <span class="pill"><b>x402</b> · exact · sponsored · 0.5 test CCD</span>
+    <span class="pill"><b>CIS-8004</b> Agent Registry #990</span>
+    <span class="pill">Concordium <b>testnet</b></span>
+  </div>
+</header>
+<main>
+  <section class="grid2">
+    <div class="card">
+      <h2>1 · Ask for a review</h2>
+      <label for="question">Question</label>
+      <textarea id="question">Discuss the role of mycorrhizae in forest ecosystems and their use in afforestation programmes in India.</textarea>
+      <label for="answer">Your answer</label>
+      <textarea id="answer">Mycorrhiza is a mutualistic association between fungi and the roots of higher plants. Two main types occur: ectomycorrhiza, which forms a sheath around roots (pines, oaks, eucalyptus), and endomycorrhiza (arbuscular), which enters root cells (teak, most tropical trees).
+
+Role in forest ecosystems:
+1. Nutrient uptake: fungal hyphae increase the absorbing surface and mobilise phosphorus, zinc and nitrogen.
+2. Water relations: better drought tolerance of seedlings.
+3. Protection: the fungal mantle guards roots against pathogens.
+4. Soil structure: glomalin binds soil aggregates.
+5. Wood-wide web: common mycorrhizal networks move carbon and signals between trees.
+
+Use in India: forest nurseries inoculate pine and eucalyptus seedlings; it helps on degraded mine spoils and wastelands.
+
+Conclusion: mycorrhizae are an invisible partner of forests, and their wider use can raise survival in afforestation.</textarea>
+      <div class="row">
+        <div><label for="marks">Marks</label><select id="marks"><option>10</option><option selected>15</option><option>20</option></select></div>
+        <div><label for="mode">Reviewer model</label><select id="mode"><option value="cloud">Cloud (fast)</option><option value="private">Private self-hosted (open-weights, slower)</option></select></div>
+      </div>
+      <button id="go">Let StudyBuddy buy a review · 0.5 test CCD</button>
+      <p class="note">StudyBuddy is our buyer agent with its own testnet account and badge (#991). It checks MainsMarker's badge first, then pays over x402. No real money: Concordium testnet only.</p>
+    </div>
+    <div class="card">
+      <h2>2 · What the agents do</h2>
+      <ol class="steps" id="steps">
+        <li data-k="Discover"><span class="dot">1</span><div>Find the seller's Agent Card<small>ERC-8004 / A2A card with the Concordium badge</small></div></li>
+        <li data-k="Verify badge"><span class="dot">2</span><div>Check the badge on the Agent Registry<small>registered · Active · card hash matches on-chain</small></div></li>
+        <li data-k="402 Payment Required"><span class="dot">3</span><div>Ask, get HTTP 402 with a price<small>x402 PAYMENT-REQUIRED header</small></div></li>
+        <li data-k="Sign payment"><span class="dot">4</span><div>Sign a sponsored transfer<small>buyer never needs CCD for gas</small></div></li>
+        <li data-k="Settled"><span class="dot">5</span><div>Facilitator verifies and settles<small>9 checks, finalised on-chain</small></div></li>
+        <li data-k="Reviewed"><span class="dot">6</span><div>MainsMarker marks the answer<small>model recorded</small></div></li>
+        <li data-k="Logged on-chain"><span class="dot">7</span><div>Audit record written on-chain<small>hashes of input and review, model, payment ref</small></div></li>
+      </ol>
+      <p class="note" id="elapsed"></p>
+    </div>
+  </section>
+
+  <section class="card rv" id="result" hidden>
+    <h2>3 · The review</h2>
+    <div class="score" id="score"></div>
+    <p id="verdict"></p>
+    <div class="grid2">
+      <div><h3>Strengths</h3><ul id="strengths"></ul><h3>Improve</h3><ul id="improvements"></ul></div>
+      <div><h3>Missing points</h3><ul id="missing"></ul><h3>Model outline</h3><ul id="outline"></ul></div>
+    </div>
+    <h3>Diagram tip</h3><p id="diagram"></p>
+    <h3>Proof</h3>
+    <div class="mono" id="proof"></div>
+    <button class="ghost" id="verify">Verify this review against the chain</button>
+    <p id="vres" class="note"></p>
+  </section>
+
+  <section class="card">
+    <h2>How it works</h2>
+    <div class="how">
+      <div><b>Verified identity</b>MainsMarker is token #990 in the CIS-8004 Agent Registry. Its owner is an identity-backed Concordium account; its Agent Card hash is pinned on-chain.</div>
+      <div><b>Pay per call (x402)</b>POST /x402/review answers 402 with a price. A signed V1 sponsored transfer in PAYMENT-SIGNATURE unlocks it.</div>
+      <div><b>Sponsored gas</b>Our facilitator checks 9 rules, adds the sponsor signature and pays the fee, so buyer agents hold only what they spend.</div>
+      <div><b>Accountability</b>Each review is anchored as a memo: input hash, review hash, model, payment ref, score. That is record keeping in the spirit of EU AI Act Art. 12.</div>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>On-chain audit log</h2>
+    <p class="note">Read live from MainsMarker's testnet account. The chain is the database, so there is no server-side storage to trust.</p>
+    <div style="overflow:auto"><table><thead><tr><th>When (UTC)</th><th>Score</th><th>Model</th><th>Review hash</th><th>Record</th></tr></thead><tbody id="audit"><tr><td colspan="5">Loading…</td></tr></tbody></table></div>
+  </section>
+
+  <section class="card">
+    <h2>For agent builders</h2>
+    <p class="note">Any x402 client can buy a review directly. MCP clients can use <span class="mono">POST /mcp</span> (tools: get_payment_requirements, review_answer, get_audit_log, verify_review).</p>
+<pre>curl -i -X POST https://mainsmarker.sites.tab.bot/x402/review \
+  -H 'content-type: application/json' \
+  -d '{"question":"…","answer":"…","marks":10}'
+# → 402 + PAYMENT-REQUIRED (scheme exact, network ccd:4221332d…, 500000 µCCD, feePayer)
+# retry with PAYMENT-SIGNATURE: base64(x402 payload from @x402/concordium client)</pre>
+    <p class="note">Agent Card: <a href="/.well-known/agent-card.json">/.well-known/agent-card.json</a> · Badge check: <a id="badgeLink" href="#">Concordium Agent Registry</a> · Accounts: <span id="accs"></span></p>
+  </section>
+</main>
+<footer>
+  Built by Tab, an AI assistant, for team lead Akshay Wagh. · Concordium Trusted Agents Hackathon (Encode Club) · <a href="https://github.com/tab-for-akshay/mainsmarker">Source on GitHub (MIT)</a><br>
+  Testnet demo. Reviews are AI feedback for practice, not official UPSC evaluation.
+</footer>
+<script>
+const $=id=>document.getElementById(id);const EX='https://ccdexplorer.io/testnet';
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const short=h=>h?h.slice(0,10)+'…'+h.slice(-6):'';
+let last=null;
+async function info(){
+  try{const i=await (await fetch('/api/info')).json();
+    $('accs').innerHTML=['mainsmarker','studybuddy','facilitator'].map(k=>`<a href="${i.explorer[k]}" target="_blank" rel="noopener">${k}</a>`).join(' · ');
+    $('badgeLink').href='https://agent-registry-mcp.concordium.com/v1/check-badge/'+i.tokens.mainsmarker.badge;
+    const b=await (await fetch('/api/badge')).json();const ok=b.body&&b.body.badge_valid;
+    $('pBadge').className='pill '+(ok?'ok':'bad');$('pBadge').innerHTML=ok?'✓ <b>Verified by Concordium</b> · '+i.tokens.mainsmarker.badge:'Badge check failed';
+  }catch(e){$('pBadge').textContent='Badge: unavailable'}
+}
+async function audit(){
+  try{const a=await (await fetch('/api/audit?limit=15')).json();
+    $('audit').innerHTML=a.length?a.map(r=>`<tr><td>${r.at.replace('T',' ').slice(0,16)}</td><td>${esc(r.sc)}</td><td>${esc(r.m)}</td><td class="mono">${short(r.out)}</td><td><a href="${r.explorer}" target="_blank" rel="noopener">view tx</a></td></tr>`).join(''):'<tr><td colspan="5">No reviews yet. Run one above.</td></tr>';
+  }catch(e){$('audit').innerHTML='<tr><td colspan="5">Could not read the chain right now.</td></tr>'}
+}
+function mark(k,cls,html){const li=[...document.querySelectorAll('#steps li')].find(l=>l.dataset.k===k);if(!li)return;li.className=cls;if(html)li.querySelector('small').innerHTML=html;}
+let tick;
+$('go').onclick=async()=>{
+  const btn=$('go');btn.disabled=true;btn.textContent='Working… (about 20–40 s)';$('result').hidden=true;
+  document.querySelectorAll('#steps li').forEach(l=>l.className='');
+  const order=[...document.querySelectorAll('#steps li')].map(l=>l.dataset.k);let i=0;const t0=Date.now();
+  mark(order[0],'run');tick=setInterval(()=>{$('elapsed').textContent=((Date.now()-t0)/1000).toFixed(0)+' s'; if(i<order.length-1&&Date.now()-t0>[1,3,5,6,14,24][i]*1000){mark(order[i],'done');i++;mark(order[i],'run')}},400);
+  try{
+    const r=await fetch('/api/demo/buy',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({question:$('question').value,answer:$('answer').value,marks:+$('marks').value,mode:$('mode').value})});
+    const j=await r.json();clearInterval(tick);
+    document.querySelectorAll('#steps li').forEach(l=>l.className='');
+    for(const s of (j.steps||[])){let extra=esc(s.detail);if(s.explorer)extra+=` <a href="${s.explorer}" target="_blank" rel="noopener">tx ↗</a>`;mark(s.name,(s.ok===false?'fail':'done'),extra)}
+    if(!j.ok){$('elapsed').innerHTML='<span class="badt">Stopped: '+esc((j.steps||[]).slice(-1)[0]?.detail||j.error||'error')+'</span>';return}
+    $('elapsed').innerHTML='<span class="okt">Done in '+((Date.now()-t0)/1000).toFixed(1)+' s.</span>';
+    show(j.result);audit();
+  }catch(e){clearInterval(tick);$('elapsed').innerHTML='<span class="badt">'+esc(e.message)+'</span>'}
+  finally{btn.disabled=false;btn.textContent='Let StudyBuddy buy a review · 0.5 test CCD'}
+};
+function show(res){
+  last=res;const v=res.review;$('result').hidden=false;
+  $('score').innerHTML=`${v.score}<small> / ${v.max}</small>`;$('verdict').textContent=v.verdict;
+  const L=(id,a)=>$(id).innerHTML=(a||[]).map(x=>`<li>${esc(x)}</li>`).join('')||'<li>—</li>';
+  L('strengths',v.strengths);L('improvements',v.improvements);L('missing',v.missing_points);L('outline',v.model_outline);
+  $('diagram').textContent=v.diagram_tip||'—';
+  $('proof').innerHTML=`model: ${esc(res.model)}<br>review sha256: ${res.review_sha256}<br>payment: <a href="${res.payment.explorer}" target="_blank" rel="noopener">${short(res.payment.transaction)}</a> (payer ${short(res.payment.payer)}, gas sponsored by ${short(res.payment.sponsor)})<br>audit record: ${res.audit.tx?`<a href="${res.audit.explorer}" target="_blank" rel="noopener">${short(res.audit.tx)}</a>`:'not written: '+esc(res.audit.error)}`;
+  $('vres').textContent='';$('result').scrollIntoView({behavior:'smooth'});
+}
+$('verify').onclick=async()=>{
+  if(!last||!last.audit.tx)return;$('vres').textContent='Checking the chain…';
+  const enc=new TextEncoder().encode(JSON.stringify(last.review));const d=await crypto.subtle.digest('SHA-256',enc);
+  const local=[...new Uint8Array(d)].map(b=>b.toString(16).padStart(2,'0')).join('');
+  for(let k=0;k<8;k++){const a=await (await fetch('/api/audit/'+last.audit.tx)).json();
+    if(a.found){const ok=a.record.out===local;$('vres').innerHTML=ok?`<span class="okt">✓ Match.</span> The SHA-256 of this review, computed in your browser (${short(local)}), equals the hash MainsMarker anchored on-chain.`:`<span class="badt">✗ Mismatch.</span> local ${short(local)} vs chain ${short(a.record.out)}`;return}
+    $('vres').textContent='Waiting for the audit transaction to finalise…';await new Promise(r=>setTimeout(r,3000))}
+  $('vres').textContent='The audit transaction is not final yet. Try again in a few seconds.';
+};
+info();audit();
+</script>
+</body>
+</html>

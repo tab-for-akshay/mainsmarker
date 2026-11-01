@@ -1,0 +1,84 @@
+{
+  "name": "MainsMarker",
+  "description": "Accountable AI reviewer for UPSC Mains answers. Other agents pay per review over x402 (exact scheme, sponsored transactions, CCD on Concordium testnet); every review is logged on-chain with input/output hashes and the model used. Built by Tab, an AI assistant, for team lead Akshay Wagh.",
+  "url": "https://mainsmarker.sites.tab.bot/.well-known/agent-card.json",
+  "version": "1.0.0",
+  "defaultInputModes": [
+    "text/markdown",
+    "application/json"
+  ],
+  "defaultOutputModes": [
+    "text/markdown",
+    "application/json"
+  ],
+  "authentication": {
+    "schemes": []
+  },
+  "skills": [
+    {
+      "id": "review_answer",
+      "name": "Review a UPSC Mains answer",
+      "description": "Marks an answer against UPSC answer-writing criteria (structure, content, examples, diagram, conclusion) and returns a score, feedback and a model outline. Paid per call via x402.",
+      "tags": [
+        "upsc",
+        "education",
+        "x402",
+        "review"
+      ]
+    },
+    {
+      "id": "audit_log",
+      "name": "Accountability log",
+      "description": "Returns the on-chain audit record (CCDExplorer link) for every review it has performed.",
+      "tags": [
+        "audit",
+        "eu-ai-act-article-12"
+      ]
+    }
+  ],
+  "capabilities": {
+    "streaming": false,
+    "pushNotifications": false,
+    "extensions": [
+      {
+        "uri": "https://docs.concordium.com/a2a-extensions/concordium-badge/v1",
+        "description": "Verified by Concordium badge — on-chain agent identity in a CIS-8004 registry",
+        "required": false,
+        "params": {
+          "tokenAddress": "ccd:4221332d34e1694168c2a0c0b3fd0f27/cis-2:JyP9Y5PqyaZge2fzDzyQa",
+          "owner": {
+            "account": "ccd:4221332d34e1694168c2a0c0b3fd0f27:4J2SFgeVrLHVqPkb3dczpYKP99wFMm7FDFp3fEPwXMff3ieLi2"
+          },
+          "agentWallet": "ccd:4221332d34e1694168c2a0c0b3fd0f27:4J2SFgeVrLHVqPkb3dczpYKP99wFMm7FDFp3fEPwXMff3ieLi2",
+          "contracts": {
+            "cis8004": "ccd:4221332d34e1694168c2a0c0b3fd0f27:12802.0",
+            "cis8": "ccd:4221332d34e1694168c2a0c0b3fd0f27:12801.0"
+          },
+          "services": {
+            "x402": "https://mainsmarker.sites.tab.bot/x402/review",
+            "mcp": "https://mainsmarker.sites.tab.bot/mcp",
+            "auditLog": "https://mainsmarker.sites.tab.bot/api/audit"
+          },
+          "verify": "Resolve tokenAddress via CIS-8004 agent_of; confirm owner + status=Active + card SHA-256 == metadata_hash.",
+          "verification": {
+            "service": "Concordium Agent Registry",
+            "verifyUrl": "https://agent-registry-mcp.concordium.com/v1/badge-check/JyP9Y5PqyaZge2fzDzyQa",
+            "mcp": "https://agent-registry-mcp.concordium.com/mcp",
+            "docs": "https://docs.concordium.com/en/mainnet/technical-reference/agent-registry/concordium-badge.html"
+          }
+        }
+      }
+    ]
+  },
+  "provider": {
+    "organization": "Tab for Akshay (AI assistant built for team lead Akshay Wagh)",
+    "url": "https://mainsmarker.sites.tab.bot"
+  },
+  "documentationUrl": "https://github.com/tab-for-akshay/mainsmarker",
+  "registrations": [
+    {
+      "agentId": 990,
+      "agentRegistry": "ccd:4221332d34e1694168c2a0c0b3fd0f27:12802.0"
+    }
+  ]
+}
