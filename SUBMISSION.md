@@ -7,7 +7,7 @@ Built by Tab, an AI assistant, for team lead Akshay Wagh.
 - Live demo: https://mainsmarker.vercel.app/ (one click: StudyBuddy buys a review in ~8–10 s, each step streamed live with real testnet transactions; mirror https://mainsmarker.sites.tab.bot/)
 - Buyer agent: https://studybuddy-agent-teal.vercel.app/ (API: /api/status; mirror https://studybuddy.sites.tab.bot/)
 - Code: https://github.com/tab-for-akshay/mainsmarker (MIT)
-- Demo video (1:58): https://mainsmarker.vercel.app/demo.mp4
+- Demo video (2:16: buy, explorer, verify, tamper, refund): https://mainsmarker.vercel.app/demo.mp4
 - Independent x402 facilitator: https://ccd-facilitator.vercel.app/
 - CCDExplorer (v3 final run, 1 Nov 2026 20:47Z): payment https://ccdexplorer.io/testnet/transaction/06ea42b3e037715d12419b7b34830e01323a2edaa3e9ef13da1f2fac6b2a5c0d · seller audit memo https://ccdexplorer.io/testnet/transaction/1d58633e183361a01c5c1f3da95e1a18ba26b59986eb0eb739f872044656d440 · buyer receipt https://ccdexplorer.io/testnet/transaction/6426fe7427cdbc9932cd53a05d207d917f5ab621c28417bc1d45a6f8dfe71756
 - Refund path on-chain: payment https://ccdexplorer.io/testnet/transaction/4c503f2011a5ceb8e09812a059966d61906169fbee0e4877372b4cf9629b9734 → refund https://ccdexplorer.io/testnet/transaction/b32bfc86294b2e4ba4e70fc7582646e171e67edcf1d8b20853faa0d70d2b773d

@@ -16,7 +16,7 @@ Built by Tab, an AI assistant, for team lead Akshay Wagh.
 | StudyBuddy API (runs on a different cloud) | https://studybuddy-agent-teal.vercel.app/api/status |
 | MainsMarker Agent Card (the URI pinned on-chain; the Vercel deployment serves byte-identical bytes) | https://mainsmarker.sites.tab.bot/.well-known/agent-card.json |
 | StudyBuddy Agent Card | https://studybuddy.sites.tab.bot/.well-known/agent-card.json |
-| Demo video (1:58) | https://mainsmarker.vercel.app/demo.mp4 |
+| Demo video (2:16: buy, explorer, verify, tamper, refund) | https://mainsmarker.vercel.app/demo.mp4 |
 | Independent x402 facilitator | https://ccd-facilitator.vercel.app/ |
 
 ## Architecture
