@@ -34,6 +34,8 @@ async function sha256hex(s) {
   const d = await crypto.subtle.digest('SHA-256', typeof s === 'string' ? enc.encode(s) : s);
   return [...new Uint8Array(d)].map(b => b.toString(16).padStart(2, '0')).join('');
 }
+// Canonical JSON (keys sorted recursively, no whitespace): the exact bytes every hash in MainsMarker is computed over.
+const canon = v => Array.isArray(v) ? '[' + v.map(canon).join(',') + ']' : (v && typeof v === 'object') ? '{' + Object.keys(v).sort().map(k => JSON.stringify(k) + ':' + canon(v[k])).join(',') + '}' : JSON.stringify(v);
 const json = (o, status = 200, headers = {}) => new Response(JSON.stringify(o, null, 2), { status, headers: { 'content-type': 'application/json; charset=utf-8', 'access-control-allow-origin': '*', 'access-control-expose-headers': 'PAYMENT-REQUIRED, PAYMENT-RESPONSE, X-Audit-Tx', ...headers } });
 const txUrl = h => `${EXPLORER}/transaction/${h}`;
 const accUrl = a => `${EXPLORER}/account/${a}`;
@@ -54,6 +56,7 @@ async function requirements(resourceUrl) {
 }
 
 // ---------- LLM review ----------
+const RUBRIC_VERSION = 'mm-rubric-2026-11-01';
 const SYS = `You are MainsMarker, a strict but fair UPSC Civil Services / IFoS Mains examiner.
 Evaluate the candidate's answer to the question. Judge: directive word compliance (discuss/explain/critically examine...), introduction, structure, content accuracy and coverage, Indian examples and data, diagram/flowchart use where it earns marks, conclusion, and word limit (about 150 words for 10 marks, 250 for 15).
 Be specific and actionable. Never invent statistics; if you mention a figure, say it must be checked.
@@ -63,6 +66,7 @@ Return ONLY JSON with keys:
 "missing_points" (array of up to 5 short strings), "model_outline" (array of 4-7 short lines: intro, body points, diagram idea, conclusion),
 "diagram_tip" (string or ""), "word_count_note" (string).`;
 
+let _rb; const rubricHash = async () => (_rb ||= await sha256hex(RUBRIC_VERSION + '\n' + SYS));
 async function chat(url, key, model, messages, extra = {}, timeoutMs = 45000) {
   const ctl = new AbortController(); const t = setTimeout(() => ctl.abort(), timeoutMs);
   try {
@@ -134,11 +138,17 @@ async function auditLog(limit = 25) {
   for (const t of j.transactions || []) {
     const m = t.details?.memo; if (!m) continue;
     const txt = decodeCborTextHex(m); let rec; try { rec = JSON.parse(txt); } catch { continue; }
-    if (!rec || rec.t !== 'mm/1') continue;
+    if (!rec || !/^mm\/[12]$/.test(rec.t)) continue;
     out.push({ ...rec, tx: t.transactionHash, at: new Date(t.blockTime * 1000).toISOString(), block: t.blockHeight, explorer: txUrl(t.transactionHash) });
     if (out.length >= limit) break;
   }
   return out;
+}
+async function stats() {
+  const r = await fetch(`${WP}/v1/accTransactions/${CFG.accounts.mainsmarker}?order=descending&limit=1000`);
+  const j = await r.json(); const buyers = new Set(); let paid = 0, ccd = 0;
+  for (const t of j.transactions || []) { const d = t.details || {}; if (d.type === 'transfer' && d.transferDestination === CFG.accounts.mainsmarker && d.transferSource !== CFG.accounts.mainsmarker) { paid++; buyers.add(d.transferSource); ccd += Number(d.transferAmount || 0) / 1e6; } }
+  return { paid_reviews: paid, distinct_buyer_accounts: buyers.size, revenue_test_ccd: ccd, buyers: [...buyers] };
 }
 async function auditByTx(hash) {
   const st = await grpc().getBlockItemStatus(TransactionHash.fromHexString(hash));
@@ -148,6 +158,18 @@ async function auditByTx(hash) {
   const txt = decodeCborTextHex(typeof memo === 'string' ? memo : memo.toString?.());
   return { found: true, status: st.status, record: JSON.parse(txt), explorer: txUrl(hash) };
 }
+
+// ---------- abuse limits on the sponsored path ----------
+// The facilitator pays gas for every settled payment, so a buyer could try to drain it. Limits (per isolate; production moves them to a Durable Object):
+const LIMITS = { per_payer_per_10min: 6, max_in_flight: 4 };
+const seen = new Map(); let inFlight = 0;
+function limitCheck(payer) {
+  const t = now(), xs = (seen.get(payer) || []).filter(x => t - x < 600000);
+  if (xs.length >= LIMITS.per_payer_per_10min) return `rate limit: ${LIMITS.per_payer_per_10min} paid reviews per payer per 10 minutes`;
+  if (inFlight >= LIMITS.max_in_flight) return 'busy: too many settlements in flight, retry shortly';
+  xs.push(t); seen.set(payer, xs); return null;
+}
+const FACILITATOR_RULES = ['Transaction version: V1 sponsored format, deserialisable', 'Sender identity: header.sender equals payload.sender, valid base58', "Sponsor identity: header.sponsor.account is this facilitator's own account", 'Transfer destination equals PaymentRequirements.payTo', 'Amount equals PaymentRequirements.amount exactly', 'Asset type: SimpleTransfer for CCD (TokenUpdate with matching tokenId for PLT)', 'Expiry in the future and at most 10 minutes ahead', "Sender signature verified against the sender's on-chain credentials", 'Payload safety: exactly one operation; sponsor is neither sender nor recipient'];
 
 // ---------- the paid resource ----------
 async function handleX402(request, origin) {
@@ -162,6 +184,11 @@ async function handleX402(request, origin) {
   const t0 = now();
   let payload; try { payload = decodePaymentSignatureHeader(sigHeader); } catch (e) { return json({ ...pr, error: 'Malformed PAYMENT-SIGNATURE header' }, 402); }
   const req = pr.accepts[0];
+  const payer = String(payload?.payload?.sender || payload?.payload?.signedTransaction?.header?.sender || 'unknown');
+  const lim = limitCheck(payer); if (lim) return json({ ...pr, error: lim }, 429, { 'retry-after': '60' });
+  inFlight++; try { return await paidReview(payload, pr, req, { question, answer, body, t0 }); } finally { inFlight--; }
+}
+async function paidReview(payload, pr, req, { question, answer, body, t0 }) {
   const fac = facilitator();
   const v = await fac.verify(payload, req);
   if (!v.isValid) return json({ ...pr, error: 'Payment rejected: ' + (v.invalidReason || 'invalid') }, 402);
@@ -170,61 +197,30 @@ async function handleX402(request, origin) {
   const tPaid = now();
   const { review: rv, model, fallbacks } = await review({ question, answer, marks: body.marks, mode: body.mode });
   const tReviewed = now();
-  const reviewId = (await sha256hex(s.transaction + question)).slice(0, 10);
-  const inHash = await sha256hex(JSON.stringify({ question, answer }));
-  const outHash = await sha256hex(JSON.stringify(rv));
-  const rec = { t: 'mm/1', id: reviewId, in: inHash.slice(0, 32), out: outHash, m: model.split('/').pop().slice(0, 28), pay: s.transaction.slice(0, 16), sc: `${rv.score}/${rv.max}` };
+  const reviewId = s.transaction.slice(0, 10);
+  const inHash = await sha256hex(canon({ question, answer }));
+  const outHash = await sha256hex(canon(rv));
+  const rec = { t: 'mm/2', in: inHash, out: outHash, rb: (await rubricHash()).slice(0, 12), m: model.split('/').pop().slice(0, 18), pay: s.transaction.slice(0, 16), sc: `${rv.score}/${rv.max}` };
   let auditTx = null, auditErr = null;
   try { auditTx = await anchorAudit(rec); } catch (e) { auditErr = String(e.message || e); }
   const settle = { success: true, transaction: s.transaction, network: s.network, payer: s.payer };
   return json({
-    review_id: reviewId, review: rv, review_sha256: outHash, input_sha256: inHash,
+    review_id: reviewId, review: rv, review_sha256: outHash, input_sha256: inHash, hashing: 'SHA-256 over canonical JSON (keys sorted recursively, no whitespace)',
     payment: { ...settle, amount_ccd: Number(PRICE_MICRO) / 1e6, sponsor: CFG.accounts.facilitator, explorer: txUrl(s.transaction) },
-    audit: auditTx ? { tx: auditTx, memo: rec, explorer: txUrl(auditTx) } : { error: auditErr, memo: rec },
+    audit: auditTx ? { tx: auditTx, memo: rec, explorer: txUrl(auditTx), status: 'submitted; final in a few seconds' } : { error: auditErr, memo: rec },
+    rubric: { version: RUBRIC_VERSION, sha256: await rubricHash(), url: '/api/rubric' },
     model, fallbacks, timings_ms: { settle: tPaid - t0, review: tReviewed - tPaid, total: now() - t0 },
     disclosure: DISCLOSURE,
   }, 200, { 'PAYMENT-RESPONSE': encodePaymentResponseHeader(settle), 'X-Audit-Tx': auditTx || '' });
 }
 
-// ---------- StudyBuddy: the buyer agent (demo of agent-to-agent commerce) ----------
+// ---------- badge helper ----------
 async function checkBadge(id) {
   const r = await fetch(`${REGISTRY_MCP}/v1/check-badge/${id}?network=testnet`);
   const j = await r.json().catch(() => ({}));
   return { http: r.status, body: j };
 }
-const badgeOk = b => b.http === 200 && b.body?.badge_valid === true;
-async function demoBuy(request, origin) {
-  const body = await request.json().catch(() => ({}));
-  const steps = []; const T0 = now();
-  const step = (name, detail, extra = {}) => steps.push({ t_ms: now() - T0, name, detail, ...extra });
-  // 1. discover the seller's Agent Card
-  step('Discover', `Read MainsMarker's Agent Card at ${origin}/.well-known/agent-card.json (badge ${CFG.tokens.mainsmarker.badge}).`);
-  // 2. verify the badge against the Concordium Agent Registry before paying
-  const b = await checkBadge(CFG.tokens.mainsmarker.badge);
-  const ok = badgeOk(b);
-  step('Verify badge', ok ? 'Agent Registry says: registered, Active, owned by an identity-backed Concordium account, card hash matches on-chain.' : 'Badge check did not pass — StudyBuddy refuses to pay.', { ok, registry_http: b.http, registry: b.body });
-  if (!ok) return json({ ok: false, steps }, 200);
-  // 3. call the paid endpoint without payment -> 402
-  const payloadBody = JSON.stringify({ question: body.question, answer: body.answer, marks: body.marks, mode: body.mode });
-  const r402 = await handleX402(new Request(origin + '/x402/review', { method: 'POST', body: payloadBody, headers: { 'content-type': 'application/json' } }), origin);
-  if (r402.status !== 402) { const e = await r402.json(); step('Request', 'Seller did not ask for payment: ' + JSON.stringify(e).slice(0, 200)); return json({ ok: false, steps }, 200); }
-  const pr = await r402.json();
-  const req = pr.accepts[0];
-  step('402 Payment Required', `Price ${Number(req.amount) / 1e6} CCD to ${req.payTo.slice(0, 10)}…, network ${req.network}, gas sponsor ${req.extra?.feePayer?.slice(0, 10)}…`, { requirements: req, header: 'PAYMENT-REQUIRED' });
-  // 4. sign a V1 sponsored transfer as the sender (StudyBuddy never pays gas)
-  const client = new X402Client({ accountAddress: AccountAddress.fromBase58(CFG.accounts.studybuddy), signer: buildBasicAccountSigner(SECRETS.SB_KEY) }, { grpcUrl: 'grpc.testnet.concordium.com:20000', useTls: true });
-  const p = await client.createPaymentPayload(2, req);
-  const paymentPayload = { ...p, accepted: req, resource: pr.resource };
-  step('Sign payment', 'StudyBuddy signed a V1 sponsored CCD transfer (sponsor signature slot left for the facilitator).', { header: 'PAYMENT-SIGNATURE' });
-  // 5. retry with the payment
-  const r = await handleX402(new Request(origin + '/x402/review', { method: 'POST', body: payloadBody, headers: { 'content-type': 'application/json', 'PAYMENT-SIGNATURE': encodePaymentSignatureHeader(paymentPayload) } }), origin);
-  const res = await r.json();
-  if (r.status !== 200) { step('Paid request', 'Seller rejected: ' + (res.error || r.status)); return json({ ok: false, steps }, 200); }
-  step('Settled', `Facilitator verified 9 rules, added sponsor signature, finalized on Concordium testnet in ${(res.timings_ms.settle / 1000).toFixed(1)} s.`, { tx: res.payment.transaction, explorer: res.payment.explorer });
-  step('Reviewed', `Model ${res.model} marked the answer ${res.review.score}/${res.review.max} in ${(res.timings_ms.review / 1000).toFixed(1)} s.`);
-  step('Logged on-chain', res.audit.tx ? `Audit record (input hash, review hash, model, payment ref) written as a memo by MainsMarker's own account.` : 'Audit write failed: ' + res.audit.error, { tx: res.audit.tx, explorer: res.audit.explorer, memo: res.audit.memo });
-  return json({ ok: true, steps, result: res });
-}
+// The buyer (StudyBuddy) is a separate service: https://studybuddy.sites.tab.bot (own worker, own key).
 
 // ---------- MCP server (JSON-RPC over HTTP) ----------
 const MCP_TOOLS = [
@@ -238,7 +234,7 @@ async function handleMcp(request, origin) {
   const reply = result => json({ jsonrpc: '2.0', id: m.id ?? null, result });
   const err = (code, message) => json({ jsonrpc: '2.0', id: m.id ?? null, error: { code, message } });
   const content = o => reply({ content: [{ type: 'text', text: JSON.stringify(o, null, 2) }] });
-  if (m.method === 'initialize') return reply({ protocolVersion: '2025-03-26', serverInfo: { name: 'mainsmarker', version: '1.0.0' }, capabilities: { tools: { listChanged: false } } });
+  if (m.method === 'initialize') return reply({ protocolVersion: '2025-03-26', serverInfo: { name: 'mainsmarker', version: '2.0.0' }, capabilities: { tools: { listChanged: false } } });
   if (m.method === 'notifications/initialized') return new Response(null, { status: 202 });
   if (m.method === 'tools/list') return reply({ tools: MCP_TOOLS });
   if (m.method !== 'tools/call') return err(-32601, 'Method not found');
@@ -256,7 +252,7 @@ async function handleMcp(request, origin) {
 async function verifyReview(auditTx, reviewObj) {
   const a = await auditByTx(String(auditTx || ''));
   if (!a.found) return { match: false, reason: 'No audit memo found for that transaction', status: a.status };
-  const h = await sha256hex(JSON.stringify(reviewObj));
+  const h = await sha256hex(canon(reviewObj));
   return { match: h === a.record.out, review_sha256: h, onchain_sha256: a.record.out, record: a.record, explorer: a.explorer };
 }
 
@@ -267,11 +263,14 @@ export default {
     try {
       if (url.pathname === '/x402/review' && request.method === 'POST') return await handleX402(request, origin);
       if (url.pathname === '/x402/review') return json(await requirements(origin + '/x402/review'), 402, { 'PAYMENT-REQUIRED': encodePaymentRequiredHeader(await requirements(origin + '/x402/review')) });
-      if (url.pathname === '/api/demo/buy' && request.method === 'POST') return await demoBuy(request, origin);
+      if (url.pathname === '/api/demo/buy') return json({ moved: 'The buyer agent now runs as its own service', url: CFG.studybuddy_url + '/api/buy' }, 410);
+      if (url.pathname === '/api/stats') return json(await stats());
+      if (url.pathname === '/api/rubric') return json({ version: RUBRIC_VERSION, sha256: await rubricHash(), anchored_prefix: (await rubricHash()).slice(0, 12), system_prompt: SYS, note: 'Every audit memo carries rb = first 12 hex of this hash, so a review can be tied to the exact rubric that produced it.' });
+      if (url.pathname === '/api/facilitator') return json({ sponsor_account: CFG.accounts.facilitator, explorer: accUrl(CFG.accounts.facilitator), rules_checked_before_sponsoring: FACILITATOR_RULES, abuse_limits: LIMITS, scheme: 'x402 exact, V1 sponsored transactions (@x402/concordium)' });
       if (url.pathname === '/api/audit') return json(await auditLog(Math.min(50, Number(url.searchParams.get('limit')) || 20)));
       if (url.pathname.startsWith('/api/audit/')) return json(await auditByTx(url.pathname.split('/').pop()));
       if (url.pathname === '/api/verify' && request.method === 'POST') { const b = await request.json(); return json(await verifyReview(b.audit_tx, b.review)); }
-      if (url.pathname === '/api/info') return json({ network: NET, price_ccd: Number(PRICE_MICRO) / 1e6, accounts: CFG.accounts, tokens: CFG.tokens, contracts: CFG.contracts, explorer: { mainsmarker: accUrl(CFG.accounts.mainsmarker), studybuddy: accUrl(CFG.accounts.studybuddy), facilitator: accUrl(CFG.accounts.facilitator) }, setup_txs: CFG.txs, disclosure: DISCLOSURE });
+      if (url.pathname === '/api/info') return json({ network: NET, price_ccd: Number(PRICE_MICRO) / 1e6, accounts: CFG.accounts, tokens: CFG.tokens, contracts: CFG.contracts, studybuddy_url: CFG.studybuddy_url, explorer: { mainsmarker: accUrl(CFG.accounts.mainsmarker), studybuddy: accUrl(CFG.accounts.studybuddy), facilitator: accUrl(CFG.accounts.facilitator) }, setup_txs: CFG.txs, disclosure: DISCLOSURE });
       if (url.pathname === '/api/badge') return json(await checkBadge(url.searchParams.get('id') || CFG.tokens.mainsmarker.badge));
       if (url.pathname === '/mcp' && request.method === 'POST') return await handleMcp(request, origin);
       if (url.pathname === '/mcp') return json({ mcp: 'POST JSON-RPC 2.0 here', tools: MCP_TOOLS.map(t => t.name) });
