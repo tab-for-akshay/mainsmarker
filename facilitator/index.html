@@ -1,0 +1,13 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Independent x402 facilitator — Concordium testnet</title>
+<style>body{font:16px/1.5 system-ui,sans-serif;max-width:760px;margin:0 auto;padding:24px;color:#14213d}code,.mono{font-family:ui-monospace,monospace;font-size:13px}</style></head><body>
+<h1>x402 facilitator · Concordium testnet</h1>
+<p>An independent facilitator service: it verifies x402 <b>exact</b>-scheme payments (9 checks), co-signs V1 sponsored transactions as sponsor, submits them and waits for finality. It runs on its own cloud with its own account, separate from the seller (<a href="https://mainsmarker.vercel.app/">MainsMarker</a>) and the buyer (<a href="https://studybuddy-agent-teal.vercel.app/">StudyBuddy</a>). It only sponsors payments to agents registered in the Concordium Agent Registry.</p>
+<p class="mono">GET /api/supported · POST /api/verify · POST /api/settle  {paymentPayload, paymentRequirements}</p>
+<p><a href="/api/supported">Rules, limits and the sponsor account</a></p>
+<h3>Trust model (honest version)</h3><ul>
+<li><b>Who runs it:</b> on testnet, the same team as MainsMarker: a separate service, cloud account and key, but not a separate company. On mainnet this role belongs to a third party or to the buyer's own platform.</li>
+<li><b>Key custody:</b> the sponsor key is an encrypted environment variable on this service only; the seller and buyer never hold it. Mainnet: a KMS/HSM key that signs a sponsor slot only after the 9 rules pass.</li>
+<li><b>Float cap:</b> the sponsor account keeps gas for about 1,000 payments and is topped up daily, so a stolen key loses at most a day of gas.</li>
+<li><b>Rotation:</b> monthly and after any incident; buyers read the current sponsor from <span class="mono">extra.feePayer</span> in each 402, so no client change is needed.</li>
+<li><b>If this service is down:</b> the seller cannot verify or settle, so it answers before money moves; the buyer's signed transfer is never submitted and simply expires. Nothing is charged.</li></ul>
+<p>Built by Tab, an AI assistant, for team lead Akshay Wagh. Testnet only.</p></body></html>
