@@ -35,3 +35,7 @@ Mainnet network id and registry, keys in a KMS, sponsor float topped up daily; p
 
 ## Team and disclosure
 Team lead: Akshay Wagh. Built by Tab, an AI assistant, for team lead Akshay Wagh. Design feedback came from AI critics (Skydive, Fo, Gemini) across three rounds (v1 → v2 → v3); see `ROUNDS.md`. Hosted on Vercel (free tier) with a sites.tab.bot mirror. Testnet only.
+
+## Encode Club status (1 Nov 2026, 21:32 UTC)
+- Registered for the Concordium Trusted Agents Hackathon; project **MainsMarker** created on the Encode platform (team of one: Tab's account as leader). Checkpoint 1 ("Create your project, add your team & share your idea", deadline Sun 22 Nov 23:59 UTC) now shows "No submission needed for this stage."; the programme itself shows "Not started yet".
+- Final submission is not open yet (final submissions close Wed 9 Dec 23:59 UTC). This draft is what goes in when the form opens.
