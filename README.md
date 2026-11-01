@@ -1,70 +1,114 @@
-# MainsMarker — an accountable AI answer-review agent on Concordium
+# MainsMarker + StudyBuddy — accountable AI agents that pay each other on Concordium
 
-**Live demo:** https://mainsmarker.sites.tab.bot/ · **Network:** Concordium testnet · **License:** MIT
+Built by Tab, an AI assistant, for team lead Akshay Wagh.
 
-> Built by Tab, an AI assistant, for team lead Akshay Wagh. Entry for the Concordium Trusted Agents Hackathon (Encode Club, 2026).
+**MainsMarker** reviews UPSC / IFoS Mains answers (score, strengths, gaps, model outline, diagram tip). **StudyBuddy** is Akshay's study agent: it buys those reviews. They are two separate services, on two different clouds, with their own keys, and they trade over plain HTTP x402 on Concordium testnet:
 
-MainsMarker reviews answers written for India's UPSC Civil Services / Forest Service Mains exams. It is an *agent other agents can trust and pay*:
+- StudyBuddy will not pay an agent until it has checked that agent's **Verified by Concordium** badge in the CIS-8004 Agent Registry and that the owner holds a valid **Concordium ID** credential;
+- it pays with a **V1 sponsored transaction** (MainsMarker's facilitator pays the gas), within a spending policy it enforces from its own on-chain history;
+- MainsMarker writes an **audit memo** for every review on-chain (full input hash, review hash, rubric version, model, payment ref, score), so anyone can later prove what the agent was paid for and what it returned.
 
-1. **Verified identity.** MainsMarker is agent **#990** in the CIS-8004 Agent Registry (testnet contract `<12802,0>`). Its badge `JyP9Y5PqyaZge2fzDzyQa` resolves to an identity-backed Concordium account, and the SHA-256 of its Agent Card (served at `/.well-known/agent-card.json`) is pinned on-chain. The card carries the *Verified by Concordium* A2A extension and an ERC-8004 `registrations` entry.
-2. **Pay per call with x402.** `POST /x402/review` answers **HTTP 402** with `PAYMENT-REQUIRED` (scheme `exact`, network `ccd:4221332d34e1694168c2a0c0b3fd0f27`, 0.5 test CCD). The buyer signs a **V1 sponsored transaction** with `@x402/concordium`; MainsMarker's facilitator verifies the 9 rules, adds the sponsor signature, pays the fee and waits for finality. Buyers never need CCD for gas.
-3. **Verify before paying.** The buyer agent, **StudyBuddy** (agent #991), checks MainsMarker's badge on the Agent Registry (`/v1/check-badge`) and refuses to pay if it is not registered, Active and hash-matched.
-4. **Accountability log.** After every paid review MainsMarker writes an audit memo from its own account: review id, SHA-256 of the input, SHA-256 of the review, model name, payment tx prefix and score. The chain *is* the log: `/api/audit` reads it back, and anyone can recompute the review hash in the browser and compare (EU AI Act Article 12-style record keeping, with the payer linked through the payment tx).
-5. **MCP server.** `POST /mcp` (JSON-RPC 2.0) exposes `get_payment_requirements`, `review_answer` (x402-gated), `get_audit_log`, `verify_review`.
-6. **Private model option.** "Private self-hosted" routes the review to Tab's own open-weights model (Huihui-Qwythos-9B abliterated, self-hosted), falling back to cloud models; the model actually used is written on-chain.
-
-## Proof on testnet (CCDExplorer)
-
-| What | Transaction |
+| | Link |
 |---|---|
-| Register MainsMarker (CIS-8004 `register`) | [f617962730f5…](https://ccdexplorer.io/testnet/transaction/f617962730f5f803b4f893060cf5f90fc68fd53350e74bb382f0f60a0410101b) |
-| Pin final Agent Card hash (`setAgentURI`) | [0e683e9d3545…](https://ccdexplorer.io/testnet/transaction/0e683e9d35458281f5a30053a96cfd07fd0b1f4c0db9d0d54a03c47e135b40ef) |
-| Register StudyBuddy (buyer agent) | [b41da04fc4f4…](https://ccdexplorer.io/testnet/transaction/b41da04fc4f4b931c2ade0e62992511573dcf5e98b93413a752d9e181862a6aa) |
-| First x402 sponsored payment (StudyBuddy → MainsMarker) | [9e1b62cd5d2f…](https://ccdexplorer.io/testnet/transaction/9e1b62cd5d2f5fa0bf9d7617fb8eaf09d6c4e7936767956b8b6fc8184a4ffcfa) |
-| Live-demo payment + audit memo | [7d581e7a…](https://ccdexplorer.io/testnet/transaction/7d581e7ae2d46adc36ccf870717f2db86b668372e47c212533dcbd4a7c91bc5e) · [066db2ed…](https://ccdexplorer.io/testnet/transaction/066db2ed78c74806967b21259895b9323b16882133feb6db01266889c75c10a6) |
-
-Accounts: MainsMarker [4J2SFgeVrL…](https://ccdexplorer.io/testnet/account/4J2SFgeVrLHVqPkb3dczpYKP99wFMm7FDFp3fEPwXMff3ieLi2) · StudyBuddy [4L8TkAeST2…](https://ccdexplorer.io/testnet/account/4L8TkAeST26KMDvTajRZbnqxUYCWGgrBUUzeZkZ1awEKcTt2aG) · Facilitator/sponsor [3p6DTnSwRw…](https://ccdexplorer.io/testnet/account/3p6DTnSwRwczJL5JxmB89jveUFJq6x6npc1azREG7bzXvQiP6c)
+| Live demo (seller page; the button calls StudyBuddy) | https://mainsmarker.sites.tab.bot/ |
+| StudyBuddy (buyer agent home: card, balance, receipts) | https://studybuddy.sites.tab.bot/ |
+| StudyBuddy API (runs on a different cloud) | https://studybuddy-agent-teal.vercel.app/api/status |
+| MainsMarker Agent Card | https://mainsmarker.sites.tab.bot/.well-known/agent-card.json |
+| StudyBuddy Agent Card | https://studybuddy.sites.tab.bot/.well-known/agent-card.json |
+| Demo video (≤ 3 min) | https://mainsmarker.sites.tab.bot/demo.mp4 |
 
 ## Architecture
 
 ```
-Browser / any x402 client / MCP client
-        │
-        ▼
-Cloudflare Worker (one file, worker/worker.js → bundled)
-  ├─ /x402/review     402 → verify+settle (in-process x402 facilitator, sponsor key) → LLM review → audit memo tx
-  ├─ /api/demo/buy    StudyBuddy agent: badge check → 402 → sign sponsored payment → retry
-  ├─ /api/audit       reads audit memos back from the chain (wallet-proxy)
-  ├─ /api/verify      SHA-256(review) vs anchored hash
-  ├─ /mcp             JSON-RPC MCP tools
-  └─ static: index.html, /.well-known/agent-card.json, /agents/studybuddy.json
-        │ gRPC-web (fetch)                   │ HTTPS
-        ▼                                    ▼
-Concordium testnet node             Agent Registry MCP (check-badge)   LLMs (cloud + self-hosted)
+ Browser ──POST /api/buy──▶ StudyBuddy (Vercel, Node)                   MainsMarker (Cloudflare Worker)
+                            1 GET  /.well-known/agent-card.json ───────▶ card (hash pinned on-chain, token #990)
+                            2 check badge ─▶ Concordium Agent Registry (CIS-8004 <12802,0>, badge MCP)
+                            3 read owner's identity credential ─▶ Concordium node (gRPC)
+                            4 POST /x402/review ───────────────────────▶ 402 + PAYMENT-REQUIRED
+                            5 policy: payTo = card wallet, price cap, daily budget (from chain)
+                            6 sign V1 sponsored transfer (own key)
+                            7 POST /x402/review + PAYMENT-SIGNATURE ───▶ facilitator: 9 checks, co-sign, submit, wait final
+                                                                         LLM review (cloud or private self-hosted model)
+                                                                         audit memo on-chain (MainsMarker's account)
+                            8 hash the review it got = anchored hash ◀── 200 + review + PAYMENT-RESPONSE
 ```
 
-Cloudflare Workers cannot use HTTP/2 gRPC, so `worker/grpcshim.js` maps the Node gRPC client that `@x402/concordium` asks for onto `ConcordiumGRPCWebClient` (gRPC-web over `fetch`). That one shim lets the official x402 client, server and facilitator run at the edge.
+| Concordium component | How it is used |
+|---|---|
+| Agent Registry (CIS-8004) + badge | MainsMarker #990 and StudyBuddy #991 are registered; cards built with the Registry MCP; card SHA-256 pinned with `setAgentURI` (StudyBuddy's card was moved to its own domain in v2 with a second `setAgentURI`). The buyer checks the badge before every payment. |
+| Concordium ID | Every account comes from an identity issued by an identity provider. StudyBuddy reads the seller owner's credential from the chain (identity provider, valid-to) and refuses to pay if none is valid. |
+| x402 + sponsored transactions | `@x402/concordium` exact scheme, V1 sponsored transfers. Buyers only need the price; the facilitator pays the fee. |
+| On-chain accountability | One transfer-with-memo per review: full input hash, review hash (canonical JSON), rubric hash prefix, model, payment ref, score. `/api/audit` reads it back from the chain; the page verifies any review in the browser. |
+| MCP | MainsMarker exposes `POST /mcp` (get_payment_requirements, review_answer, get_audit_log, verify_review). |
 
-## Why it matters
+### What the facilitator checks before it sponsors a payment
+1. Transaction version: V1 sponsored format, deserialisable
+2. Sender identity: header.sender equals payload.sender, valid base58
+3. Sponsor identity: header.sponsor.account is this facilitator's own account
+4. Transfer destination equals PaymentRequirements.payTo
+5. Amount equals PaymentRequirements.amount exactly
+6. Asset type: SimpleTransfer for CCD (TokenUpdate with matching tokenId for PLT)
+7. Expiry in the future and at most 10 minutes ahead
+8. Sender signature verified against the sender's on-chain credentials
+9. Payload safety: exactly one operation; sponsor is neither sender nor recipient
 
-Lakhs of aspirants prepare for UPSC Mains every year, and answer writing is the hardest part to practise alone; human evaluation is paid per answer and slow. An AI reviewer is cheap but unaccountable: which model marked me, was the feedback changed later, who stands behind it? MainsMarker answers those questions with Concordium: a verified owner, pay-per-use without subscriptions or card details, and a public, tamper-evident record of every review. The same pattern fits any paid AI evaluation (code review, essay grading, compliance checks).
+Plus per-payer limits (6 paid reviews per payer per 10 minutes, at most 4 settlements in flight; `/api/facilitator`). Today these limits live in the worker's memory; in production they move to a Durable Object so they hold across instances.
 
-## How to run
+### Hashing (so anyone can reproduce it)
+All hashes are SHA-256 over **canonical JSON**: object keys sorted recursively, no whitespace (`canon()` in `worker/worker.js`, the page and `scripts/buy.mjs`). The rubric is public at `/api/rubric`; its hash prefix is in every memo, so a review is tied to the exact rubric that produced it.
 
-```bash
-npm install
-# 1. testnet accounts (test identity provider, no real ID): scripts/genseed.mjs → scripts/idreq.mjs → follow the test-IP form → scripts/deploy.mjs 0|1|2
-#    then the faucet: PUT https://wallet-proxy.testnet.concordium.com/v0/testnetGTUDrop/<address>
-# 2. register agents with the Agent Registry MCP (build_agent_card → build_register → scripts/upd.mjs → build_set_agent_uri)
-# 3. end-to-end x402 test from Node: CCD_SEED="…" node scripts/x402test.mjs
-npm run build            # bundles worker/worker.js → build/worker.mjs
+## Proof on Concordium testnet
+| What | Transaction |
+|---|---|
+| MainsMarker registered (#990) | https://ccdexplorer.io/testnet/transaction/f617962730f5f803b4f893060cf5f90fc68fd53350e74bb382f0f60a0410101b |
+| StudyBuddy registered (#991) | https://ccdexplorer.io/testnet/transaction/b41da04fc4f4b931c2ade0e62992511573dcf5e98b93413a752d9e181862a6aa |
+| StudyBuddy card moved to its own domain (`setAgentURI`) | https://ccdexplorer.io/testnet/transaction/ba4ddcb5fcc05a72bd9816ee46b1fc7d6661616fb3cb5ab93a4354ce777f73f9 |
+| StudyBuddy → MainsMarker x402 payment (sponsored) | https://ccdexplorer.io/testnet/transaction/e5a085b1aa578598e3f17bd915d8db4fbb071c816f15a6e78723fe8aa75027ea |
+| …its audit memo | https://ccdexplorer.io/testnet/transaction/fefb80bea864530d8cfce075b22da2eb2cc292143789ddc7e8b299648181fd39 |
+| A 4th account buying with the standalone CLI (`scripts/buy.mjs`) | https://ccdexplorer.io/testnet/transaction/a87c78fc34f5627bca6d21dcf20d00edf191d4d6395301b25e39bbca13bc686a |
+| …its audit memo | https://ccdexplorer.io/testnet/transaction/09edd43bf811cca8f2e0b45cecc92a37973172d7bb5853f97c52f07316da7032 |
+
+Accounts: MainsMarker `4J2SFgeVrLHVqPkb3dczpYKP99wFMm7FDFp3fEPwXMff3ieLi2`, StudyBuddy `4L8TkAeST26KMDvTajRZbnqxUYCWGgrBUUzeZkZ1awEKcTt2aG`, facilitator (gas sponsor) `3p6DTnSwRwczJL5JxmB89jveUFJq6x6npc1azREG7bzXvQiP6c`.
+
+## Run it
+**Buy a review with your own testnet account** (any x402 client works; this one is ~60 lines):
 ```
-Secrets (account keys, LLM keys) are injected at deploy time as `globalThis.__MM_SECRETS__` and never committed.
+npm i @x402/concordium @x402/core @concordium/web-sdk
+BUYER_ADDRESS=<your testnet account> BUYER_KEY=<its signing key, hex> node scripts/buy.mjs
+```
+It fetches the card, checks the badge, gets the 402, pays (sponsored) and checks that its own hash of the review equals the anchored hash.
 
-## Roadmap / path to production
+**Deploy your own:** `worker/` is the MainsMarker Cloudflare Worker (esbuild bundle, `grpcshim.js` maps the Node gRPC client to the gRPC-web client). `studybuddy/` is the buyer (runs as a Cloudflare Worker for its home page and as a Vercel Node function for `/api/buy`). Keys are injected at deploy time and are never in this repo. `scripts/` creates testnet identities and accounts (`idreq.mjs`, `deploy.mjs`), registers agents (`upd.mjs`), and builds bundles.
 
-See [SUBMISSION.md](SUBMISSION.md#path-to-production).
+## Impact
+UPSC Mains is written, and feedback on written answers is the slowest, costliest part of preparation; many aspirants practise without any. An answer-review agent that other agents (a study planner, a coaching platform's bot, a Telegram tutor) can pay per call, and that leaves a public record of what it did, makes AI feedback cheap and checkable. The same pattern (badge-gated payment + audit memo) fits any paid AI service where the buyer needs to know who stands behind the agent.
 
-## AI disclosure
+## Path to production
+| Item (per review, mainnet fee schedule) | Energy | EUR | CCD at €0.0025 |
+|---|---|---|---|
+| Sponsored x402 transfer (facilitator pays) | 635 | €0.0127 | ≈ 5.1 |
+| Audit memo (transfer with memo) | 739 | €0.0148 | ≈ 5.9 |
+| **Chain cost per review** | | **€0.028** | **≈ 11** |
+| LLM inference (gpt-oss-120b, ~0.7k in / ~0.9k out tokens, provider list price, approx.) | | ≈ €0.001 | ≈ 0.4 |
+| **Price we would charge** | | **≈ €0.10 (₹10)** | **≈ 40** |
 
-Built by Tab, an AI assistant, for team lead Akshay Wagh. Code, text and the demo were produced by Tab; reviews are generated by LLMs (cloud: gpt-oss-120b via Groq, fallbacks gpt-oss-20b and Gemini; private: a self-hosted open-weights model). Reviews are practice feedback, not official UPSC evaluation. Testnet only; test identities use the Concordium testnet identity provider with fictional attributes.
+Concordium fees are pegged to the euro (0.00002 €/energy, read from the chain's parameters on 1 Nov 2026); energy figures are from our own testnet transactions; the CCD rate is CoinGecko's on 1 Nov 2026 (≈ €0.0025). The 0.5 CCD test price is a demo number and is below cost. At €0.10 a review the margin covers sponsoring the buyer's gas and the audit write. Batching (one memo carrying a Merkle root of up to N reviews) cuts the audit cost per review by about N.
+
+1. **Mainnet:** same code with network `ccd:9dd9ca4d19e9393877d2c44b70f89acb`, the mainnet registry, and keys in a KMS (the sponsor key signs only after the 9 checks; it holds a small float that is topped up daily, so a leak caps the loss).
+2. **Who pays:** students never touch crypto. A coaching platform or study app runs a StudyBuddy-style buyer agent and pays per review; it bills students in rupees. MainsMarker is a backend any such agent can call.
+3. **Distribution:** a Telegram / WhatsApp tutor bot that buys reviews through this API; coaching institutes that batch-buy reviews for test series.
+4. **Trust:** rubric versions published and hashed; a public audit log; per-buyer limits in a Durable Object; batch memos (Merkle root per N reviews).
+5. **Quality:** a published evaluation set (real answers, human scores vs. the agent's scores) before charging real money.
+
+## Roadmap
+- Payment in a stablecoin PLT once available on Concordium (x402 already supports `TokenUpdate`).
+- Human-graded evaluation set and score calibration per paper.
+- Hindi answers; diagram feedback from photos of handwritten answers.
+
+## Models
+Cloud: gpt-oss-120b/20b (Groq), Gemini Flash-Lite as fallback. **Private mode:** a self-hosted open-weights model (an abliterated Qwen-family 9B) for users who do not want answers to leave infrastructure we control. The model used is written into every audit memo.
+
+## Credits and disclosure
+Built by Tab, an AI assistant, for team lead Akshay Wagh. Design reviews during the build came from three AI critics (Skydive's agent Arden, Fo on wajo.ai, Gemini); see `ROUNDS.md`. Testnet only; no real money moves.
+
+MIT licence.
