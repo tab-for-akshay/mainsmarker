@@ -4,7 +4,7 @@
 import { ExactConcordiumScheme as X402Client } from '@x402/concordium/exact/client';
 import { CONCORDIUM_TESTNET_CAIP2 } from '@x402/concordium';
 import { decodePaymentRequiredHeader, encodePaymentSignatureHeader, decodePaymentResponseHeader } from '@x402/core/http';
-import { AccountAddress, buildBasicAccountSigner } from '@concordium/web-sdk';
+import { AccountAddress, buildBasicAccountSigner, AccountTransactionType, CcdAmount, DataBlob, TransactionExpiry, TransactionHash, signTransaction } from '@concordium/web-sdk';
 import { ConcordiumGRPCNodeClient, credentials } from '@concordium/web-sdk/nodejs';
 
 const SECRETS = globalThis.__MM_SECRETS__ || { SB_KEY: (typeof process !== 'undefined' && process.env && process.env.SB_KEY) || '' }; // only SB_KEY is inlined into this worker at publish time
@@ -26,12 +26,21 @@ const enc = new TextEncoder();
 async function sha256hex(s) { const d = await crypto.subtle.digest('SHA-256', typeof s === 'string' ? enc.encode(s) : s); return [...new Uint8Array(d)].map(b => b.toString(16).padStart(2, '0')).join(''); }
 
 // Spending history is read from the chain, not from memory: budget survives restarts and is publicly auditable.
+function cborText(s) { const b = enc.encode(s); const n = b.length; const h = n < 24 ? [0x60 + n] : n < 256 ? [0x78, n] : [0x79, n >> 8, n & 255]; const o = new Uint8Array(h.length + n); o.set(h); o.set(b, h.length); return o; }
+// Buyer receipt: StudyBuddy anchors, from its own account, the hash of the review it actually received + the seller's audit tx.
+async function anchorReceipt(auditTx, out) {
+  const g = new ConcordiumGRPCNodeClient('grpc.testnet.concordium.com', 20000, credentials.createSsl(), { timeout: 15000 });
+  const me = AccountAddress.fromBase58(ME); const nonce = (await g.getNextAccountNonce(me)).nonce;
+  const tx = { type: AccountTransactionType.TransferWithMemo, header: { expiry: TransactionExpiry.futureMinutes(10), nonce, sender: me }, payload: { amount: CcdAmount.fromMicroCcd(1n), toAddress: me, memo: new DataBlob(cborText(JSON.stringify({ t: 'sb/1', audit: auditTx, out }))) } };
+  const h = await g.sendAccountTransaction(tx, await signTransaction(tx, buildBasicAccountSigner(SECRETS.SB_KEY)));
+  return TransactionHash.toHexString ? TransactionHash.toHexString(h) : h.toString();
+}
 async function purchases(limit = 100) {
   const r = await fetch(`${WP}/v1/accTransactions/${ME}?order=descending&limit=${limit}`);
   const j = await r.json(); const out = [];
   for (const t of j.transactions || []) {
     const d = t.details || {}; if (!/transfer/i.test(d.type || '')) continue;
-    if (d.transferSource !== ME) continue;
+    if (d.transferSource !== ME || d.transferDestination === ME) continue;
     out.push({ tx: t.transactionHash, at: new Date(t.blockTime * 1000).toISOString(), to: d.transferDestination, amount_ccd: Number(d.transferAmount || 0) / 1e6, sponsored: !!t.sponsor, explorer: txUrl(t.transactionHash) });
   }
   return out;
@@ -86,18 +95,19 @@ async function buy(body) {
   // 5. sign a V1 sponsored transfer with StudyBuddy's own key
   const client = new X402Client({ accountAddress: AccountAddress.fromBase58(ME), signer: buildBasicAccountSigner(SECRETS.SB_KEY) }, { grpcUrl: 'grpc.testnet.concordium.com:20000', useTls: true });
   const p = await client.createPaymentPayload(2, req);
-  step('Sign payment', 'StudyBuddy signed a V1 sponsored CCD transfer with its own key; the sponsor slot is left for the seller\'s facilitator.', { header: 'PAYMENT-SIGNATURE' });
+  step('Sign payment', 'StudyBuddy signed a V1 sponsored CCD transfer with its own key; the sponsor slot is left for the independent facilitator.', { header: 'PAYMENT-SIGNATURE' });
   // 6. retry with the payment over HTTP
   const r2 = await fetch(seller + '/x402/review', { method: 'POST', headers: { 'content-type': 'application/json', 'PAYMENT-SIGNATURE': encodePaymentSignatureHeader({ ...p, accepted: req, resource: pr.resource }) }, body: payloadBody });
   const res = await r2.json();
   if (r2.status !== 200) { step('Settled', 'Seller rejected the payment: ' + (res.error || r2.status), { ok: false }); return { ok: false, steps }; }
   const pay = r2.headers.get('PAYMENT-RESPONSE') ? decodePaymentResponseHeader(r2.headers.get('PAYMENT-RESPONSE')) : res.payment;
-  step('Settled', `Facilitator checked the 9 rules, co-signed as sponsor and finalised on Concordium testnet in ${(res.timings_ms.settle / 1000).toFixed(1)} s (PAYMENT-RESPONSE header received).`, { tx: pay.transaction, explorer: txUrl(pay.transaction) });
+  step('Settled', `The independent facilitator checked the 9 rules, co-signed as sponsor and finalised on Concordium testnet in ${(res.timings_ms.settle / 1000).toFixed(1)} s (PAYMENT-RESPONSE header received).`, { tx: pay.transaction, explorer: txUrl(pay.transaction) });
   step('Reviewed', `${res.model} marked the answer ${res.review.score}/${res.review.max} in ${(res.timings_ms.review / 1000).toFixed(1)} s.`);
   // 7. StudyBuddy keeps its own proof: hash of what it received must match the seller's audit memo
   const canon = v => Array.isArray(v) ? '[' + v.map(canon).join(',') + ']' : (v && typeof v === 'object') ? '{' + Object.keys(v).sort().map(k => JSON.stringify(k) + ':' + canon(v[k])).join(',') + '}' : JSON.stringify(v);
   const got = await sha256hex(canon(res.review));
   step('Logged on-chain', res.audit.tx ? `MainsMarker wrote the audit memo (input hash, review hash, rubric version, model, payment ref). StudyBuddy's hash of the review it received: ${got.slice(0, 12)}… ${got === res.review_sha256 ? '= seller\'s hash' : '≠ seller\'s hash!'}` : 'Audit write failed: ' + res.audit.error, { tx: res.audit.tx, explorer: res.audit.explorer, memo: res.audit.memo, ok: !!res.audit.tx && got === res.review_sha256 });
+  if (res.audit.tx) { try { const rt = await anchorReceipt(res.audit.tx, got); step('Buyer receipt', `StudyBuddy anchored its own receipt from its own account: the hash of the review it received + the seller's audit tx. Two independent parties now attest the same review.`, { tx: rt, explorer: txUrl(rt), ok: true }); } catch (e) { step('Buyer receipt', 'Receipt not anchored: ' + String(e.message || e).slice(0, 120), { ok: false }); } }
   return { ok: true, steps, result: res, buyer: { agent: 'StudyBuddy', account: ME, token: CFG.tokens.studybuddy } };
 }
 
