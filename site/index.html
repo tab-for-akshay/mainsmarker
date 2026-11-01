@@ -73,13 +73,13 @@ Conclusion: mycorrhizae are an invisible partner of forests, and their wider use
         <div><label for="marks">Marks</label><select id="marks"><option>10</option><option selected>15</option><option>20</option></select></div>
         <div><label for="mode">Reviewer model</label><select id="mode"><option value="cloud">Cloud (fast)</option><option value="private">Private self-hosted (open-weights, slower)</option></select></div>
       </div>
-      <button id="go">Let StudyBuddy buy a review · 0.5 test CCD</button>
-      <p class="note">The button calls <a href="https://studybuddy.sites.tab.bot/" target="_blank" rel="noopener">StudyBuddy</a>, a separate buyer agent (own service, own key, badge #991). It fetches MainsMarker's card over HTTP, checks the badge, applies its spending policy, then pays over x402. No real money: Concordium testnet only.</p>
+      <button id="go">Let StudyBuddy buy a review · 0.5 test CCD</button> <button class="ghost" id="gosim" title="Pays, then makes the reviewer fail on purpose, so you can see the on-chain refund">Simulate a reviewer outage (refund path)</button>
+      <p class="note">The button calls <a href="https://studybuddy-agent-teal.vercel.app/" target="_blank" rel="noopener">StudyBuddy</a>, a separate buyer agent (own service, own key, badge #991). It fetches MainsMarker's card over HTTP, checks the badge, applies its spending policy, then pays over x402. No real money: Concordium testnet only.</p>
     </div>
     <div class="card">
       <h2>2 · What the agents do</h2>
       <ol class="steps" id="steps">
-        <li data-k="Discover"><span class="dot">1</span><div>Find the seller's Agent Card<small>ERC-8004 / A2A card with the Concordium badge</small></div></li>
+        <li data-k="Discover"><span class="dot">1</span><div>Find the seller's Agent Card<small>A2A Agent Card, registered in the CIS-8004 Agent Registry, with the Concordium badge</small></div></li>
         <li data-k="Verify badge"><span class="dot">2</span><div>Check the badge on the Agent Registry<small>registered · Active · card hash matches on-chain</small></div></li>
         <li data-k="Verify identity"><span class="dot">·</span><div>Check the owner's Concordium ID<small>identity credential valid, read from the chain</small></div></li>
         <li data-k="402 Payment Required"><span class="dot">3</span><div>Ask, get HTTP 402 with a price<small>x402 PAYMENT-REQUIRED header</small></div></li>
@@ -102,6 +102,7 @@ Conclusion: mycorrhizae are an invisible partner of forests, and their wider use
       <div><h3>Strengths</h3><ul id="strengths"></ul><h3>Improve</h3><ul id="improvements"></ul></div>
       <div><h3>Missing points</h3><ul id="missing"></ul><h3>Model outline</h3><ul id="outline"></ul></div>
     </div>
+    <h3>Per-criterion marks (out of 10)</h3><p id="subs" class="mono"></p>
     <h3>Diagram tip</h3><p id="diagram"></p>
     <h3>Proof</h3>
     <div class="mono" id="proof"></div>
@@ -127,17 +128,18 @@ Conclusion: mycorrhizae are an invisible partner of forests, and their wider use
 
   <section class="card">
     <h2>Verify any review</h2>
-    <p class="note">Paste a review JSON (the <span class="mono">review</span> object an agent received) and its audit transaction hash. Your browser hashes the canonical JSON (keys sorted, no spaces) and compares it with the hash anchored on Concordium.</p>
+    <p class="note">Paste a review JSON (the <span class="mono">review</span> object an agent received) and its audit transaction hash. Your browser hashes the canonical JSON (keys sorted, no spaces) and compares it with the hash anchored on Concordium. <b>Every check here reads the chain directly from your browser</b> (Concordium's public testnet wallet-proxy); MainsMarker's own API is not asked, so the seller cannot vouch for itself.</p>
     <label for="vtx">Audit transaction hash</label><input id="vtx" class="mono" style="width:100%" placeholder="64 hex characters">
     <label for="vq">Question (optional, to check the input hash too)</label><textarea id="vq" style="min-height:50px"></textarea><label for="va">Answer (optional)</label><textarea id="va" style="min-height:70px"></textarea>
     <label for="vjson">Review JSON</label><textarea id="vjson" class="mono" style="min-height:90px" placeholder='{"score": 7.5, "max": 15, ...}'></textarea>
-    <button class="ghost" id="vany">Check against the chain</button> <span id="vanyres" class="note"></span>
+    <button class="ghost" id="vany">Check against the chain</button> <button class="ghost" id="vtamper" title="Changes the score in the pasted review by +3, then checks it">Try a tampered review</button> <span id="vanyres" class="note"></span>
+    <p class="note" id="vtamperres"></p>
   </section>
 
   <section class="card">
     <h2>For agent builders</h2>
     <p class="note">Any x402 client can buy a review directly. MCP clients can use <span class="mono">POST /mcp</span> (tools: get_payment_requirements, review_answer, get_audit_log, verify_review).</p>
-<pre>curl -i -X POST https://mainsmarker.sites.tab.bot/x402/review \
+<pre>curl -i -X POST https://mainsmarker.vercel.app/x402/review \
   -H 'content-type: application/json' \
   -d '{"question":"…","answer":"…","marks":10}'
 # → 402 + PAYMENT-REQUIRED (scheme exact, network ccd:4221332d…, 500000 µCCD, feePayer)
@@ -147,12 +149,19 @@ Conclusion: mycorrhizae are an invisible partner of forests, and their wider use
 </main>
 <footer>
   Built by Tab, an AI assistant, for team lead Akshay Wagh. · Concordium Trusted Agents Hackathon (Encode Club) · <a href="https://github.com/tab-for-akshay/mainsmarker">Source on GitHub (MIT)</a><br>
-  Testnet demo. Reviews are AI feedback for practice, not official UPSC evaluation.
+  Hosted on Vercel; mirror at <a href="https://mainsmarker.sites.tab.bot/">mainsmarker.sites.tab.bot</a> (same code, same Agent Card). Testnet demo. Reviews are AI feedback for practice, not official UPSC evaluation.
 </footer>
 <script>
 const $=id=>document.getElementById(id);const EX='https://ccdexplorer.io/testnet';
 const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const SB='https://studybuddy-agent-teal.vercel.app';
+const WP='https://wallet-proxy.testnet.concordium.com';const MMACC='4J2SFgeVrLHVqPkb3dczpYKP99wFMm7FDFp3fEPwXMff3ieLi2';
+function cborTxt(hex){const b=hex.match(/../g).map(h=>parseInt(h,16));let i=1,n=b[0]&31;if(b[0]>>5!==3)return null;if(n===24){n=b[1];i=2}else if(n===25){n=(b[1]<<8)|b[2];i=3}return new TextDecoder().decode(new Uint8Array(b.slice(i,i+n)))}
+async function accTx(acc){return (await (await fetch(`${WP}/v1/accTransactions/${acc}?order=descending&limit=1000`)).json()).transactions||[]}
+async function chainAudit(tx){const t=(await accTx(MMACC)).find(t=>t.transactionHash===tx);if(!t)return{found:false,status:'not final yet, or not a MainsMarker transaction'};let r=null;try{r=JSON.parse(cborTxt(t.details.memo))}catch(e){}if(!r||!/^mm\/[12]$/.test(r.t))return{found:false,status:'no MainsMarker audit memo in that transaction'};return{found:true,record:r,explorer:EX+'/transaction/'+tx,list:null}}
+async function chainReceipt(tx,rec){const mm=await accTx(MMACC);const pay=mm.find(t=>rec.pay&&t.transactionHash.startsWith(rec.pay)&&t.details&&t.details.transferDestination===MMACC);if(!pay)return{found:false};const payer=pay.details.transferSource;
+  for(const t of await accTx(payer)){const m=t.details&&t.details.memo;if(!m)continue;let r;try{r=JSON.parse(cborTxt(m))}catch(e){continue}if(r&&r.t==='sb/1'&&r.audit===tx)return{found:true,payer,explorer:EX+'/transaction/'+t.transactionHash,agree:r.out===rec.out}}return{found:false,payer}}
+
 const canon=v=>Array.isArray(v)?'['+v.map(canon).join(',')+']':(v&&typeof v==='object')?'{'+Object.keys(v).sort().map(k=>JSON.stringify(k)+':'+canon(v[k])).join(',')+'}':JSON.stringify(v);
 const sha=async s=>[...new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(s)))].map(b=>b.toString(16).padStart(2,'0')).join('');
 const short=h=>h?h.slice(0,10)+'…'+h.slice(-6):'';
@@ -167,7 +176,7 @@ async function info(){
 }
 async function audit(){
   try{const a=await (await fetch('/api/audit?limit=15')).json();
-    $('audit').innerHTML=a.length?a.map(r=>`<tr><td>${r.at.replace('T',' ').slice(0,16)}</td><td>${esc(r.sc)}</td><td>${esc(r.m)}</td><td class="mono">${short(r.out)}</td><td><a href="${r.explorer}" target="_blank" rel="noopener">view tx</a></td></tr>`).join(''):'<tr><td colspan="5">No reviews yet. Run one above.</td></tr>';
+    $('audit').innerHTML=a.length?a.map(r=>r.t==='mm/refund'?`<tr><td>${r.at.replace('T',' ').slice(0,16)}</td><td><b>refund</b></td><td>${esc(r.why||'')}</td><td class="mono">pay ${esc(r.pay||'')}</td><td><a href="${r.explorer}" target="_blank" rel="noopener">view tx</a></td></tr>`:`<tr><td>${r.at.replace('T',' ').slice(0,16)}</td><td>${esc(r.sc)}</td><td>${esc(r.m)}</td><td class="mono">${short(r.out)}</td><td><a href="${r.explorer}" target="_blank" rel="noopener">view tx</a></td></tr>`).join(''):'<tr><td colspan="5">No reviews yet. Run one above.</td></tr>';
   }catch(e){$('audit').innerHTML='<tr><td colspan="5">Could not read the chain right now.</td></tr>'}
 }
 async function pending(a){
@@ -179,51 +188,60 @@ async function pending(a){
 }
 function mark(k,cls,html){const li=[...document.querySelectorAll('#steps li')].find(l=>l.dataset.k===k);if(!li)return;li.className=cls;if(html)li.querySelector('small').innerHTML=html;}
 let tick;
-$('go').onclick=async()=>{
+async function runBuy(sim){
   const btn=$('go');btn.disabled=true;btn.textContent='Working… (about 20–40 s)';$('result').hidden=true;
   document.querySelectorAll('#steps li').forEach(l=>l.className='');
   const order=[...document.querySelectorAll('#steps li')].map(l=>l.dataset.k);let i=0;const t0=Date.now();
-  document.querySelectorAll('#steps li').forEach(l=>l.className='wait');tick=setInterval(()=>{$('elapsed').textContent='StudyBuddy is working… '+((Date.now()-t0)/1000).toFixed(0)+' s (steps appear with their real timings when it reports back)'},400);
+  document.querySelectorAll('#steps li').forEach(l=>l.className='wait');tick=setInterval(()=>{$('elapsed').textContent='StudyBuddy is working… '+((Date.now()-t0)/1000).toFixed(0)+' s (each step lights up live, with its real timing, as StudyBuddy reports it)'},400);
   try{
-    const r=await fetch(SB+'/api/buy',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({question:$('question').value,answer:$('answer').value,marks:+$('marks').value,mode:$('mode').value})});
-    const j=await r.json();clearInterval(tick);
-    document.querySelectorAll('#steps li').forEach(l=>l.className='');
-    for(const s of (j.steps||[])){let extra=`<b>+${(s.t_ms/1000).toFixed(1)} s</b> · `+esc(s.detail);if(s.explorer)extra+=` <a href="${s.explorer}" target="_blank" rel="noopener">tx ↗</a>`;mark(s.name,(s.ok===false?'fail':'done'),extra)}
+    const r=await fetch(SB+'/api/buy?stream=1',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({question:$('question').value,answer:$('answer').value,marks:+$('marks').value,mode:$('mode').value,simulate:sim?'reviewer_outage':undefined,seller:location.origin.includes('vercel.app')?location.origin:undefined})});
+    const showStep=s=>{let extra=`<b>+${(s.t_ms/1000).toFixed(1)} s</b> · `+esc(s.detail);if(s.explorer)extra+=` <a href="${s.explorer}" target="_blank" rel="noopener">tx ↗</a>`;mark(s.name,(s.ok===false?'fail':'done'),extra)};
+    let j=null;const rd=r.body.getReader();const td=new TextDecoder();let buf='';
+    for(;;){const {done,value}=await rd.read();if(done)break;buf+=td.decode(value,{stream:true});let n;while((n=buf.indexOf('\n'))>=0){const line=buf.slice(0,n).trim();buf=buf.slice(n+1);if(!line)continue;const o=JSON.parse(line);if(o.step)showStep(o.step);if(o.done)j=o}}
+    if(!j&&buf.trim()){const o=JSON.parse(buf);j=o.done?o:o}
+    clearInterval(tick);document.querySelectorAll('#steps li.wait').forEach(l=>l.className='');
+    if(!j)throw new Error('StudyBuddy closed the stream without a result');
+    if(j.refunded){$('elapsed').innerHTML=`<span class="okt">Refund path shown.</span> The payment settled, the reviewer failed (simulated), and MainsMarker sent the money back on-chain: <a href="${j.payment.explorer}" target="_blank" rel="noopener">payment tx</a> · <a href="${j.refund.explorer}" target="_blank" rel="noopener">refund tx</a>.`;setTimeout(audit,6000);statsLine();return}
     if(!j.ok){$('elapsed').innerHTML='<span class="badt">Stopped: '+esc((j.steps||[]).slice(-1)[0]?.detail||j.error||'error')+'</span>';return}
     $('elapsed').innerHTML='<span class="okt">Done in '+((Date.now()-t0)/1000).toFixed(1)+' s.</span>';
     show(j.result);pending(j.result.audit);statsLine();
   }catch(e){clearInterval(tick);$('elapsed').innerHTML='<span class="badt">'+esc(e.message)+'</span>'}
   finally{btn.disabled=false;btn.textContent='Let StudyBuddy buy a review · 0.5 test CCD'}
-};
+}
+$('go').onclick=()=>runBuy(false);$('gosim').onclick=()=>{if(confirm('This pays 0.5 test CCD, then makes the reviewer fail on purpose so you can watch MainsMarker refund the payment on-chain. Go?'))runBuy(true)};
 function show(res){
   last=res;const v=res.review;$('result').hidden=false;
   $('score').innerHTML=`${v.score}<small> / ${v.max}</small>`;$('verdict').textContent=v.verdict;
   const L=(id,a)=>$(id).innerHTML=(a||[]).map(x=>`<li>${esc(x)}</li>`).join('')||'<li>—</li>';
   L('strengths',v.strengths);L('improvements',v.improvements);L('missing',v.missing_points);L('outline',v.model_outline);
-  $('diagram').textContent=v.diagram_tip||'—';
+  $('diagram').textContent=v.diagram_tip||'—';$('subs').textContent=v.subscores?Object.entries(v.subscores).map(([k,x])=>k+' '+x).join(' · '):'—';
   $('proof').innerHTML=`model: ${esc(res.model)}<br>review sha256: ${res.review_sha256}<br>payment: <a href="${res.payment.explorer}" target="_blank" rel="noopener">${short(res.payment.transaction)}</a> (payer ${short(res.payment.payer)}, gas sponsored by ${short(res.payment.sponsor)})<br>rubric: ${esc(res.rubric?res.rubric.version:'')} · sha256 ${short(res.rubric?res.rubric.sha256:'')} (<a href="/api/rubric" target="_blank">read it</a>)<br>audit record: ${res.audit.tx?`<a href="${res.audit.explorer}" target="_blank" rel="noopener">${short(res.audit.tx)}</a>`:'not written: '+esc(res.audit.error)}`;
   $('vres').textContent='';$('vlink').href=verifyLink(res,$('question').value,$('answer').value);$('vlink').hidden=false;$('result').scrollIntoView({behavior:'smooth'});
 }
 $('verify').onclick=async()=>{
   if(!last||!last.audit.tx)return;$('vres').textContent='Checking the chain…';
   const local=await sha(canon(last.review));
-  for(let k=0;k<8;k++){const a=await (await fetch('/api/audit/'+last.audit.tx)).json();
+  for(let k=0;k<8;k++){const a=await chainAudit(last.audit.tx);
     if(a.found){const ok=a.record.out===local;$('vres').innerHTML=ok?`<span class="okt">✓ Match.</span> The SHA-256 of this review, computed in your browser (${short(local)}), equals the hash MainsMarker anchored on-chain.`:`<span class="badt">✗ Mismatch.</span> local ${short(local)} vs chain ${short(a.record.out)}`;return}
     $('vres').textContent='Waiting for the audit transaction to finalise…';await new Promise(r=>setTimeout(r,3000))}
   $('vres').textContent='The audit transaction is not final yet. Try again in a few seconds.';
 };
-async function statsLine(){try{const s=await (await fetch('/api/stats')).json();$('stats').textContent=`${s.paid_reviews} paid reviews · ${s.distinct_buyer_accounts} distinct buyer account(s) · ${s.revenue_test_ccd.toFixed(1)} test CCD earned`}catch(e){}}
+async function statsLine(){try{const s=await (await fetch('/api/stats')).json();$('stats').textContent=`${s.paid_reviews} paid reviews · ${s.refunds||0} refunded · ${s.distinct_buyer_accounts} distinct buyer account(s) · ${s.revenue_test_ccd.toFixed(1)} test CCD earned (price ${s.price_ccd||0.5} CCD; faucet top-ups excluded)`}catch(e){}}
 async function verifyAny(){const tx=$('vtx').value.trim();let obj;try{obj=JSON.parse($('vjson').value)}catch(e){$('vanyres').textContent='That is not valid JSON.';return}
   if(obj.review&&obj.audit)obj=obj.review;const local=await sha(canon(obj));$('vanyres').textContent='Checking the chain…';
-  let a;for(let k=0;k<10;k++){a=await (await fetch('/api/audit/'+tx)).json();if(a.found)break;await new Promise(r=>setTimeout(r,3000))}
+  let a;for(let k=0;k<10;k++){a=await chainAudit(tx);if(a.found)break;await new Promise(r=>setTimeout(r,3000))}
   if(!a.found){$('vanyres').textContent='No MainsMarker audit memo in that transaction ('+esc(a.status||'not found')+').';return}
   let out=a.record.out===local?`<span class="okt">✓ Review matches</span> the anchored hash ${short(a.record.out)}`:`<span class="badt">✗ Review does not match</span> (yours ${short(local)} vs chain ${short(a.record.out)})`;
   const q=$('vq').value.trim(),an=$('va').value.trim();
   if(q&&an){const ih=await sha(canon({question:q,answer:an}));out+=a.record.in===ih?` · <span class="okt">✓ Input matches</span> (this review was produced for this question and answer)`:(a.record.in.length<64?' · input hash not in this older record':` · <span class="badt">✗ Input does not match</span>`)}
   out+=` · model ${esc(a.record.m)} · rubric ${esc(a.record.rb||'v1')} · <a href="${a.explorer}" target="_blank" rel="noopener">audit tx</a>`;
-  try{const c=await (await fetch('/api/cosign/'+tx)).json();out+=c.found?` · <span class="okt">✓ Buyer receipt</span> from ${short(c.payer)} agrees (<a href="${c.explorer}" target="_blank" rel="noopener">tx</a>)`:' · no buyer receipt'}catch(e){}
+  try{const c=await chainReceipt(tx,a.record);out+=c.found?(c.agree?` · <span class="okt">✓ Buyer receipt</span> from ${short(c.payer)} agrees (<a href="${c.explorer}" target="_blank" rel="noopener">tx</a>)`:` · <span class="badt">✗ Buyer receipt disagrees</span> (<a href="${c.explorer}" target="_blank" rel="noopener">tx</a>)`):' · no buyer receipt'}catch(e){}
+  out+=' · <span class="note">read from the chain in your browser</span>';
   $('vanyres').innerHTML=out}
 $('vany').onclick=verifyAny;
+$('vtamper').onclick=async()=>{let o;try{o=JSON.parse($('vjson').value)}catch(e){$('vtamperres').textContent='Buy a review first (or open a verify link), then try this.';return}
+  if(o.review&&o.audit)o=o.review;const before=o.score;o.score=Math.min((+o.max||15),(+o.score||0)+3);if(o.score===before)o.score=before-3;$('vjson').value=JSON.stringify(o,null,1);
+  $('vtamperres').innerHTML=`Changed the score from <b>${esc(before)}</b> to <b>${esc(o.score)}</b>, the way a lying seller (or a buyer forging a better mark) would. The chain should now refuse it:`;await verifyAny()};
 function b64u(s){return btoa(unescape(encodeURIComponent(s))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'')}
 function unb64u(s){return decodeURIComponent(escape(atob(s.replace(/-/g,'+').replace(/_/g,'/'))))}
 function verifyLink(res,q,an){return location.origin+'/#v='+b64u(JSON.stringify({tx:res.audit.tx,review:res.review,q,a:an}))}

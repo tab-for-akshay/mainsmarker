@@ -15,8 +15,8 @@ const WP = 'https://wallet-proxy.testnet.concordium.com';
 const REGISTRY_MCP = 'https://agent-registry-mcp.concordium.com';
 const EXPLORER = 'https://ccdexplorer.io/testnet';
 const DEFAULT_SELLER = 'https://mainsmarker.sites.tab.bot';
-const ALLOWED_SELLERS = [DEFAULT_SELLER];       // demo allow-list; any badge-verified seller can be added
-const POLICY = { max_price_ccd: 1, daily_budget_ccd: 10, max_calls_per_hour: 30 };
+const ALLOWED_SELLERS = [DEFAULT_SELLER, 'https://mainsmarker.vercel.app']; // same seller: public-cloud deployment + mirror, same card bytes       // demo allow-list; any badge-verified seller can be added
+const POLICY = { max_price_ccd: 1, daily_budget_ccd: 25, max_calls_per_hour: 30 };
 const SB_API = 'https://studybuddy-agent-teal.vercel.app'; // StudyBuddy's buy endpoint runs on a different cloud from MainsMarker
 const DISCLOSURE = 'Built by Tab, an AI assistant, for team lead Akshay Wagh.';
 const now = () => Date.now();
@@ -48,9 +48,9 @@ async function purchases(limit = 100) {
 async function balance() { const r = await fetch(`${WP}/v0/accBalance/${ME}`); const j = await r.json(); return Number(j?.finalizedBalance?.accountAmount ?? j?.currentBalance?.accountAmount ?? 0) / 1e6; }
 async function spentLast(ms) { const p = await purchases(100); const since = now() - ms; const xs = p.filter(x => Date.parse(x.at) >= since); return { ccd: xs.reduce((a, x) => a + x.amount_ccd, 0), calls: xs.length }; }
 
-async function buy(body) {
+async function buy(body, onStep) {
   const steps = []; const T0 = now();
-  const step = (name, detail, extra = {}) => steps.push({ t_ms: now() - T0, name, detail, ...extra });
+  const step = (name, detail, extra = {}) => { const st = { t_ms: now() - T0, name, detail, ...extra }; steps.push(st); if (onStep) try { onStep(st); } catch {} };
   const seller = String(body.seller || DEFAULT_SELLER).replace(/\/$/, '');
   if (!ALLOWED_SELLERS.includes(seller)) { step('Discover', `Seller ${seller} is not on StudyBuddy's allow-list.`, { ok: false }); return { ok: false, steps }; }
   // 1. discover the seller's Agent Card over HTTP
@@ -80,7 +80,7 @@ async function buy(body) {
   step('Verify identity', idok ? `Owner ${ownerAcc.slice(0, 10)}… holds a Concordium identity credential from identity provider ${idinfo.identity_provider}, valid until ${idinfo.valid_to} (read from the chain).` : 'Could not confirm a valid identity credential for the owner — StudyBuddy refuses to pay.', { ok: idok, identity: idinfo });
   if (!idok) return { ok: false, steps };
   // 3. ask for the resource without paying -> 402
-  const payloadBody = JSON.stringify({ question: body.question, answer: body.answer, marks: body.marks, mode: body.mode });
+  const payloadBody = JSON.stringify({ question: body.question, answer: body.answer, marks: body.marks, mode: body.mode, ...(body.simulate === 'reviewer_outage' ? { simulate: 'reviewer_outage' } : {}) });
   const r1 = await fetch(seller + '/x402/review', { method: 'POST', headers: { 'content-type': 'application/json' }, body: payloadBody });
   if (r1.status !== 402) { step('402 Payment Required', `Seller answered ${r1.status} instead of 402: ` + (await r1.text()).slice(0, 200), { ok: false }); return { ok: false, steps }; }
   const pr = decodePaymentRequiredHeader(r1.headers.get('PAYMENT-REQUIRED'));
@@ -93,12 +93,16 @@ async function buy(body) {
   step('Check policy', why ? 'Refused: ' + why : `payTo matches the verified card's wallet; ${price} ≤ ${POLICY.max_price_ccd} CCD cap; spent today ${day.ccd.toFixed(2)} of ${POLICY.daily_budget_ccd} CCD (read from chain).`, { ok: !why, policy: POLICY, spent_today_ccd: day.ccd });
   if (why) return { ok: false, steps };
   // 5. sign a V1 sponsored transfer with StudyBuddy's own key
+  // wait until StudyBuddy's own earlier transactions (e.g. the last buyer receipt) are final, so the facilitator's nonce preflight agrees
+  { const g = new ConcordiumGRPCNodeClient('grpc.testnet.concordium.com', 20000, credentials.createSsl(), { timeout: 15000 }); const me = AccountAddress.fromBase58(ME);
+    for (let k = 0; k < 20; k++) { const n = await g.getNextAccountNonce(me); if (n.allFinal) break; if (k === 0) step('Wait', 'StudyBuddy waits for its previous transaction to finalise before signing a new one (nonce order).'); await new Promise(r => setTimeout(r, 1000)); } }
   const client = new X402Client({ accountAddress: AccountAddress.fromBase58(ME), signer: buildBasicAccountSigner(SECRETS.SB_KEY) }, { grpcUrl: 'grpc.testnet.concordium.com:20000', useTls: true });
   const p = await client.createPaymentPayload(2, req);
   step('Sign payment', 'StudyBuddy signed a V1 sponsored CCD transfer with its own key; the sponsor slot is left for the independent facilitator.', { header: 'PAYMENT-SIGNATURE' });
   // 6. retry with the payment over HTTP
   const r2 = await fetch(seller + '/x402/review', { method: 'POST', headers: { 'content-type': 'application/json', 'PAYMENT-SIGNATURE': encodePaymentSignatureHeader({ ...p, accepted: req, resource: pr.resource }) }, body: payloadBody });
   const res = await r2.json();
+  if (r2.status !== 200 && res.refund && res.refund.tx) { step('Settled', `Paid ${price} CCD (payment tx below), but the seller could not deliver: ${res.reason || res.error}.`, { tx: res.payment && res.payment.transaction, explorer: res.payment && res.payment.explorer, ok: true }); step('Refunded', `MainsMarker refunded the ${price} CCD on-chain with an mm/refund memo naming the payment. StudyBuddy's budget is whole again.`, { tx: res.refund.tx, explorer: res.refund.explorer, ok: true }); return { ok: false, refunded: true, refund: res.refund, payment: res.payment, steps }; }
   if (r2.status !== 200) { step('Settled', 'Seller rejected the payment: ' + (res.error || r2.status), { ok: false }); return { ok: false, steps }; }
   const pay = r2.headers.get('PAYMENT-RESPONSE') ? decodePaymentResponseHeader(r2.headers.get('PAYMENT-RESPONSE')) : res.payment;
   step('Settled', `The independent facilitator checked the 9 rules, co-signed as sponsor and finalised on Concordium testnet in ${(res.timings_ms.settle / 1000).toFixed(1)} s (PAYMENT-RESPONSE header received).`, { tx: pay.transaction, explorer: txUrl(pay.transaction) });
@@ -117,6 +121,12 @@ export default {
     if (request.method === 'OPTIONS') return new Response(null, { headers: { 'access-control-allow-origin': '*', 'access-control-allow-headers': '*', 'access-control-allow-methods': 'GET,POST,OPTIONS' } });
     try {
       if (url.pathname === '/api/buy' && globalThis.__MM_SECRETS__ && !globalThis.EdgeRuntime) return Response.redirect(SB_API + '/api/buy', 307);
+      if (url.pathname === '/api/buy' && request.method === 'POST' && url.searchParams.get('stream') === '1') {
+        const body = await request.json().catch(() => ({})); const te = new TextEncoder();
+        const rs = new ReadableStream({ async start(c) { const send = o => c.enqueue(te.encode(JSON.stringify(o) + '\n'));
+          try { const r = await buy(body, st => send({ step: st })); send({ done: true, ...r }); } catch (e) { send({ done: true, ok: false, error: String(e?.message || e).slice(0, 300) }); } c.close(); } });
+        return new Response(rs, { headers: { 'content-type': 'application/x-ndjson; charset=utf-8', 'access-control-allow-origin': '*', 'cache-control': 'no-store', 'x-accel-buffering': 'no' } });
+      }
       if (url.pathname === '/api/buy' && request.method === 'POST') return json(await buy(await request.json().catch(() => ({}))));
       if (url.pathname === '/api/receipts') return json(await purchases(Math.min(100, Number(url.searchParams.get('limit')) || 30)));
       if (url.pathname === '/api/status') { const [bal, day] = await Promise.all([balance(), spentLast(864e5)]); return json({ agent: 'StudyBuddy', account: ME, token: CFG.tokens.studybuddy, balance_ccd: bal, policy: POLICY, spent_today_ccd: day.ccd, calls_today: day.calls, allowed_sellers: ALLOWED_SELLERS, explorer: `${EXPLORER}/account/${ME}`, disclosure: DISCLOSURE }); }

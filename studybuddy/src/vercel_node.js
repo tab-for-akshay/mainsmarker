@@ -9,5 +9,6 @@ export default async function handler(req, res) {
   const headers = new Headers(); for (const [k, v] of Object.entries(req.headers)) if (typeof v === 'string') headers.set(k, v);
   const r = await w.fetch(new Request(url, { method: req.method, headers, body }), NF);
   res.statusCode = r.status; r.headers.forEach((v, k) => res.setHeader(k, v));
+  if (r.body && (r.headers.get('content-type') || '').includes('ndjson')) { const rd = r.body.getReader(); for (;;) { const { done, value } = await rd.read(); if (done) break; res.write(Buffer.from(value)); } res.end(); return; }
   res.end(Buffer.from(await r.arrayBuffer()));
 }

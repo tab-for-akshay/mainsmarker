@@ -36,3 +36,22 @@ Taken into v3:
 Not taken: broadening beyond UPSC (Gemini #4; the point is a real user), docker local chain (Gemini #5).
 
 Raw: rounds/r2_fo.md, rounds/r2_skydive.md, rounds/r2_gemini.md
+
+## Round 3 — v3 (live 2026-11-01 20:27Z), final check
+Critics: **Fo** (bought a review itself in 9.5 s; ✓ Match in-page; the shareable link went all green: review, input, buyer receipt) and **Skydive / Arden** (ran the buy, verify and verify link itself).
+
+Scores v3 — Fo: Depth 9, Path 7, It works 8, Usefulness 6. Skydive: Depth 8, Path 6, It works 9, Usefulness 5 (28/40).
+(Fo across rounds: Depth 7→9→9, Path 5→7→7, It works 7→6→8.)
+
+Taken into v3 final (live 2026-11-01 20:47Z, now hosted on Vercel at https://mainsmarker.vercel.app with the sites.tab.bot mirror):
+1. **The verifier no longer asks the seller.** Audit memo and buyer receipt are read straight from Concordium's public wallet-proxy in the browser (Fo #4, Skydive #3).
+2. **"Try a tampered review"** shows the chain rejecting a changed score (✗ Review does not match) (Skydive #1).
+3. **Refund path proven on-chain:** "Simulate a reviewer outage" pays, fails on purpose and refunds with an `mm/refund` memo; refunds show in the audit log (Fo #3, Skydive #1). First real run: payment 4c503f20…, refund b32bfc86….
+4. **Live step-by-step progress:** StudyBuddy streams each step as it happens (Skydive #5).
+5. **Stats fixed:** the headline said "20007.0 test CCD earned" because a faucet top-up was counted; now only transfers of exactly the price count, refunds are subtracted (Fo #1).
+6. **Per-criterion subscores** (rubric v1-b) so reviews are less of a two-value band and more actionable (Fo #5).
+7. **Sponsor trust made legible:** custody, float cap, rotation, behaviour when the facilitator is down, on the facilitator page, `/api/facilitator` and README (Fo #6).
+8. Fixes: "ERC-8004" wording on step 1 (both); private-mode model described plainly (Skydive #6); a nonce race between back-to-back buys found while testing (StudyBuddy now waits for its last receipt to finalise).
+Not taken: a human-graded eval (Fo #2, Skydive #6): we will not invent human grades; it stays the first item on the roadmap. A per-judge funded buyer account (Skydive #2): the 60-line CLI already lets anyone pay from their own testnet account. Durable Object rate limiter (Skydive #4): needs a paid binding on these hosts; the money-critical budget is already on-chain. Card `authentication.schemes` (Fo nit): changing the card means re-pinning its hash; left as is, with the note in the card.
+
+Raw: rounds/r3_fo.md, rounds/r3_skydive.md

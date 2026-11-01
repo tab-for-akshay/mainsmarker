@@ -11,12 +11,12 @@ Built by Tab, an AI assistant, for team lead Akshay Wagh.
 
 | | Link |
 |---|---|
-| Live demo (seller page; the button calls StudyBuddy) | https://mainsmarker.sites.tab.bot/ |
-| StudyBuddy (buyer agent home: card, balance, receipts) | https://studybuddy.sites.tab.bot/ |
+| Live demo (seller page; the button calls StudyBuddy) | https://mainsmarker.vercel.app/ (mirror: https://mainsmarker.sites.tab.bot/) |
+| StudyBuddy (buyer agent home: card, balance, receipts) | https://studybuddy-agent-teal.vercel.app/ (mirror: https://studybuddy.sites.tab.bot/) |
 | StudyBuddy API (runs on a different cloud) | https://studybuddy-agent-teal.vercel.app/api/status |
-| MainsMarker Agent Card | https://mainsmarker.sites.tab.bot/.well-known/agent-card.json |
+| MainsMarker Agent Card (the URI pinned on-chain; the Vercel deployment serves byte-identical bytes) | https://mainsmarker.sites.tab.bot/.well-known/agent-card.json |
 | StudyBuddy Agent Card | https://studybuddy.sites.tab.bot/.well-known/agent-card.json |
-| Demo video (1:58) | https://mainsmarker.sites.tab.bot/demo.mp4 |
+| Demo video (1:58) | https://mainsmarker.vercel.app/demo.mp4 |
 | Independent x402 facilitator | https://ccd-facilitator.vercel.app/ |
 
 ## Architecture
@@ -56,13 +56,22 @@ The facilitator (`facilitator/`, https://ccd-facilitator.vercel.app) is a separa
 8. Sender signature verified against the sender's on-chain credentials
 9. Payload safety: exactly one operation; sponsor is neither sender nor recipient
 
-Plus per-payer limits at both the facilitator and the seller (6 paid reviews per payer per 10 minutes; at most 4 settlements in flight at the seller). Today these limits live in the worker's memory; in production they move to a Durable Object so they hold across instances.
+Plus per-payer limits at both the facilitator and the seller (6 paid reviews per payer per 10 minutes; at most 4 settlements in flight at the seller). Today these limits live in the function's memory (our hosts here offer no shared store we can bind without paid add-ons); in production they move to a Durable Object or Redis so they hold across instances. The money-critical limits do not depend on this: StudyBuddy's budget is computed from its own on-chain history, so it survives any restart.
 
 ### Hashing (so anyone can reproduce it)
 All hashes are SHA-256 over **canonical JSON**: object keys sorted recursively, no whitespace (`canon()` in `worker/worker.js`, the page and `scripts/buy.mjs`). The rubric is public at `/api/rubric`; its hash prefix is in every memo, so a review is tied to the exact rubric that produced it.
 
 ## Verify any review yourself
-Every review on the demo page has a **shareable verify link**: it carries the review, the question and answer, and the audit tx. Opening it recomputes, in your browser, the canonical hashes of the review and of the input and compares them with the memo on-chain, then looks up the buyer's receipt on the payer's account (`/api/cosign/<audit tx>`).
+Every review on the demo page has a **shareable verify link**: it carries the review, the question and answer, and the audit tx. Opening it recomputes, in your browser, the canonical hashes of the review and of the input and compares them with the memo on-chain, then finds the buyer's own receipt on the payer's account. **All of these reads go straight from your browser to Concordium's public testnet wallet-proxy; MainsMarker's API is not asked**, so the seller cannot vouch for itself.
+
+**Try to cheat it.** "Try a tampered review" changes the score in the pasted review (6.5 → 9.5) and re-checks: the browser shows **✗ Review does not match** against the anchored hash, while the input hash and the buyer receipt still match, which pinpoints exactly what was altered.
+
+**Watch the refund path.** "Simulate a reviewer outage" pays for a review, makes the reviewer fail on purpose, and MainsMarker returns the 0.5 CCD on-chain with an `mm/refund` memo naming the payment. Real run on 1 Nov 2026: payment https://ccdexplorer.io/testnet/transaction/4c503f2011a5ceb8e09812a059966d61906169fbee0e4877372b4cf9629b9734 → refund https://ccdexplorer.io/testnet/transaction/b32bfc86294b2e4ba4e70fc7582646e171e67edcf1d8b20853faa0d70d2b773d. Refunds appear in the audit log and in `/api/stats` (which counts only transfers of exactly the price; faucet top-ups are excluded).
+
+**Live progress.** StudyBuddy streams each step (`/api/buy?stream=1`, NDJSON) so the page lights up discover → badge → identity → 402 → policy → sign → settle → review → audit → receipt as they happen, each with its real timing and explorer link.
+
+**Per-criterion marks.** Since rubric `mm-rubric-2026-11-01b` each review carries subscores out of 10 (directive, structure, content, examples, diagram, conclusion); the rubric hash in each memo changes with it.
+
 
 ## Does the reviewer discriminate?
 | Answer (same question, 15 marks) | Words | Scores in 3 runs | Mean |
@@ -103,6 +112,9 @@ It fetches the card, checks the badge, gets the 402, pays (sponsored) and checks
 ## Impact
 UPSC Mains is written, and feedback on written answers is the slowest, costliest part of preparation; many aspirants practise without any. An answer-review agent that other agents (a study planner, a coaching platform's bot, a Telegram tutor) can pay per call, and that leaves a public record of what it did, makes AI feedback cheap and checkable. The same pattern (badge-gated payment + audit memo) fits any paid AI service where the buyer needs to know who stands behind the agent.
 
+## Sponsor trust (who holds the gas key)
+On testnet the facilitator is run by the same team as MainsMarker: a separate service, cloud account and key, not a separate company. Key custody: the sponsor key is an encrypted environment variable on the facilitator only (mainnet: KMS/HSM, signs only after the 9 rules pass). Float cap: about 1,000 payments of gas, topped up daily. Rotation: monthly and after incidents; buyers read the sponsor from `extra.feePayer` in each 402, so no client change. If the facilitator is down, the seller answers before money moves and the buyer's signed transfer simply expires: nothing is charged. Also at `/api/facilitator` (`trust`) and on https://ccd-facilitator.vercel.app/.
+
 ## Path to production
 | Item (per review, mainnet fee schedule) | Energy | EUR | CCD at €0.0025 |
 |---|---|---|---|
@@ -126,7 +138,8 @@ Concordium fees are pegged to the euro (0.00002 €/energy, read from the chain'
 - Hindi answers; diagram feedback from photos of handwritten answers.
 
 ## Models
-Cloud: gpt-oss-120b/20b (Groq), Gemini Flash-Lite as fallback. **Private mode:** a self-hosted open-weights model (an abliterated Qwen-family 9B) for users who do not want answers to leave infrastructure we control. The model used is written into every audit memo.
+Cloud: gpt-oss-120b/20b (Groq), Gemini Flash-Lite as fallback. **Private mode (optional, off by default):** a self-hosted open-weights 9B model on infrastructure we control, for users who do not want their answers to leave it. The current demo endpoint runs a community variant with its refusal behaviour removed (an "abliterated" Qwen-family model); it only marks answers, every output is still hashed and anchored, and a production deployment would use stock weights. The model used is written into every audit memo.
+
 
 ## Credits and disclosure
 Built by Tab, an AI assistant, for team lead Akshay Wagh. Design reviews during the build came from three AI critics, each round on the live demo: Skydive's agent Arden and Fo (wajo.ai) bought and verified reviews themselves; Gemini read the docs. Their critiques and what we changed are in `ROUNDS.md` and `rounds/`. Testnet only; no real money moves.

@@ -61,7 +61,8 @@ async function requirements(resourceUrl) {
 }
 
 // ---------- LLM review ----------
-const RUBRIC_VERSION = 'mm-rubric-2026-11-01';
+const SPONSOR_TRUST = { operator: 'Same team as MainsMarker on testnet (an honest limitation): a separate service, cloud account and key, but not a separate company.', key_custody: 'Testnet: the sponsor key is an encrypted environment variable on the facilitator service only; MainsMarker and StudyBuddy never hold it. Mainnet: a KMS/HSM-held key that only signs sponsor slots after the 9 rules pass.', float_cap: 'The sponsor account holds a small float (gas for about 1,000 payments); a top-up job refills it daily, so a compromised key can lose at most one day of gas.', rotation: 'Rotate the sponsor key monthly and on any incident; buyers learn the current sponsor from extra.feePayer in each 402 response, so rotation needs no client change.', if_down: 'If the facilitator is down, the seller cannot verify or settle, so it answers before any money moves; the buyer\'s signed transfer is never submitted and expires. StudyBuddy reports the failure and pays nothing.' };
+const RUBRIC_VERSION = 'mm-rubric-2026-11-01b'; // b: per-criterion subscores (round-3 feedback)
 const SYS = `You are MainsMarker, a strict but fair UPSC Civil Services / IFoS Mains examiner.
 Evaluate the candidate's answer to the question. Judge: directive word compliance (discuss/explain/critically examine...), introduction, structure, content accuracy and coverage, Indian examples and data, diagram/flowchart use where it earns marks, conclusion, and word limit (about 150 words for 10 marks, 250 for 15).
 Be specific and actionable. Never invent statistics; if you mention a figure, say it must be checked.
@@ -69,7 +70,9 @@ Return ONLY JSON with keys:
 "score" (number, to one decimal), "max" (number), "verdict" (one sentence),
 "strengths" (array of up to 3 short strings), "improvements" (array of up to 4 short strings),
 "missing_points" (array of up to 5 short strings), "model_outline" (array of 4-7 short lines: intro, body points, diagram idea, conclusion),
-"diagram_tip" (string or ""), "word_count_note" (string).`;
+"diagram_tip" (string or ""), "word_count_note" (string),
+"subscores" (object with integer marks out of 10 for each criterion: "directive", "structure", "content", "examples", "diagram", "conclusion").
+Use the whole scale: an answer that misses the directive or has no content scores low; reserve high marks for answers a topper would write.`;
 
 let _rb; const rubricHash = async () => (_rb ||= await sha256hex(RUBRIC_VERSION + '\n' + SYS));
 async function chat(url, key, model, messages, extra = {}, timeoutMs = 45000) {
@@ -92,6 +95,7 @@ function parseReview(text, max) {
     verdict: String(o.verdict || ''), strengths: arr(o.strengths), improvements: arr(o.improvements),
     missing_points: arr(o.missing_points), model_outline: arr(o.model_outline),
     diagram_tip: String(o.diagram_tip || ''), word_count_note: String(o.word_count_note || ''),
+    subscores: Object.fromEntries(['directive', 'structure', 'content', 'examples', 'diagram', 'conclusion'].map(k => [k, Math.max(0, Math.min(10, Math.round(Number(o?.subscores?.[k]) || 0)))])),
   };
 }
 async function review({ question, answer, marks, mode }) {
@@ -151,7 +155,7 @@ async function auditLog(limit = 25) {
   for (const t of j.transactions || []) {
     const m = t.details?.memo; if (!m) continue;
     const txt = decodeCborTextHex(m); let rec; try { rec = JSON.parse(txt); } catch { continue; }
-    if (!rec || !/^mm\/[12]$/.test(rec.t)) continue;
+    if (!rec || !/^mm\/([12]|refund)$/.test(rec.t)) continue;
     out.push({ ...rec, tx: t.transactionHash, at: new Date(t.blockTime * 1000).toISOString(), block: t.blockHeight, explorer: txUrl(t.transactionHash) });
     if (out.length >= limit) break;
   }
@@ -170,9 +174,11 @@ async function cosign(auditTx) {
 }
 async function stats() {
   const r = await fetch(`${WP}/v1/accTransactions/${CFG.accounts.mainsmarker}?order=descending&limit=1000`);
-  const j = await r.json(); const buyers = new Set(); let paid = 0, ccd = 0;
-  for (const t of j.transactions || []) { const d = t.details || {}; if (d.type === 'transfer' && d.transferDestination === CFG.accounts.mainsmarker && d.transferSource !== CFG.accounts.mainsmarker) { paid++; buyers.add(d.transferSource); ccd += Number(d.transferAmount || 0) / 1e6; } }
-  return { paid_reviews: paid, distinct_buyer_accounts: buyers.size, revenue_test_ccd: ccd, buyers: [...buyers] };
+  const j = await r.json(); const buyers = new Set(); let paid = 0, refunds = 0, other = 0;
+  for (const t of j.transactions || []) { const d = t.details || {};
+    if (d.type === 'transfer' && d.transferDestination === CFG.accounts.mainsmarker && d.transferSource !== CFG.accounts.mainsmarker) { if (String(d.transferAmount) === PRICE_MICRO) { paid++; buyers.add(d.transferSource); } else other++; }
+    if (d.transferSource === CFG.accounts.mainsmarker && d.transferDestination !== CFG.accounts.mainsmarker && String(d.transferAmount) === PRICE_MICRO) refunds++; }
+  return { paid_reviews: paid, refunds, distinct_buyer_accounts: buyers.size, revenue_test_ccd: (paid - refunds) * Number(PRICE_MICRO) / 1e6, price_ccd: Number(PRICE_MICRO) / 1e6, note: 'Counts only transfers of exactly the review price; faucet top-ups (' + other + ') are excluded.', buyers: [...buyers] };
 }
 async function auditByTx(hash) {
   const st = await grpc().getBlockItemStatus(TransactionHash.fromHexString(hash));
@@ -219,7 +225,7 @@ async function paidReview(payload, pr, req, { question, answer, body, t0 }) {
   if (!s.success) return json({ ...pr, error: 'Settlement failed: ' + (s.errorReason || 'unknown') }, 402);
   const tPaid = now();
   let rvOut;
-  try { rvOut = await review({ question, answer, marks: body.marks, mode: body.mode }); }
+  try { if (body.simulate === 'reviewer_outage') throw new Error('Simulated reviewer outage (refund-path demo requested by the buyer)'); rvOut = await review({ question, answer, marks: body.marks, mode: body.mode }); }
   catch (e) { // paid but could not deliver: refund the buyer on-chain, with a memo that says why
     let refundTx = null; try { refundTx = await refund(s.payer, s.transaction); } catch (e2) { }
     return json({ error: 'Review failed after payment; refunded.', reason: String(e.message || e).slice(0, 200), payment: { transaction: s.transaction, explorer: txUrl(s.transaction) }, refund: refundTx ? { tx: refundTx, explorer: txUrl(refundTx) } : { error: 'refund not sent; will be retried manually' } }, 502);
@@ -296,7 +302,7 @@ export default {
       if (url.pathname.startsWith('/api/cosign/')) return json(await cosign(url.pathname.split('/').pop()));
       if (url.pathname === '/api/stats') return json(await stats());
       if (url.pathname === '/api/rubric') return json({ version: RUBRIC_VERSION, sha256: await rubricHash(), anchored_prefix: (await rubricHash()).slice(0, 12), system_prompt: SYS, note: 'Every audit memo carries rb = first 12 hex of this hash, so a review can be tied to the exact rubric that produced it.' });
-      if (url.pathname === '/api/facilitator') return json({ facilitator_service: FACILITATOR_URL, sponsor_account: CFG.accounts.facilitator, explorer: accUrl(CFG.accounts.facilitator), rules_checked_before_sponsoring: FACILITATOR_RULES, abuse_limits: LIMITS, scheme: 'x402 exact, V1 sponsored transactions (@x402/concordium)' });
+      if (url.pathname === '/api/facilitator') return json({ facilitator_service: FACILITATOR_URL, sponsor_account: CFG.accounts.facilitator, explorer: accUrl(CFG.accounts.facilitator), rules_checked_before_sponsoring: FACILITATOR_RULES, abuse_limits: LIMITS, scheme: 'x402 exact, V1 sponsored transactions (@x402/concordium)', trust: SPONSOR_TRUST });
       if (url.pathname === '/api/audit') return json(await auditLog(Math.min(50, Number(url.searchParams.get('limit')) || 20)));
       if (url.pathname.startsWith('/api/audit/')) return json(await auditByTx(url.pathname.split('/').pop()));
       if (url.pathname === '/api/verify' && request.method === 'POST') { const b = await request.json(); return json(await verifyReview(b.audit_tx, b.review)); }
