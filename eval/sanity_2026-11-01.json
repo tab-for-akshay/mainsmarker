@@ -1,0 +1,56 @@
+{
+ "question": "Discuss the role of mycorrhizae in forest ecosystems and their use in afforestation programmes in India.",
+ "answers": {
+  "weak": "Mycorrhiza is fungus with roots. It helps plants. Forests have many mycorrhiza. In India it is used in afforestation. It is good for trees and environment. Government should use more mycorrhiza in forests so that forests grow well and climate change reduces.",
+  "medium": "Mycorrhiza is a mutualistic association between fungi and the roots of higher plants. Two main types occur: ectomycorrhiza, which forms a sheath around roots (pines, oaks, eucalyptus), and endomycorrhiza (arbuscular), which enters root cells (teak, most tropical trees).\n\nRole in forest ecosystems:\n1. Nutrient uptake: fungal hyphae increase the absorbing surface and mobilise phosphorus, zinc and nitrogen.\n2. Water relations: better drought tolerance of seedlings.\n3. Protection: the fungal mantle guards roots against pathogens.\n4. Soil structure: glomalin binds soil aggregates.\n5. Wood-wide web: common mycorrhizal networks move carbon and signals between trees.\n\nUse in India: forest nurseries inoculate pine and eucalyptus seedlings; it helps on degraded mine spoils and wastelands.\n\nConclusion: mycorrhizae are an invisible partner of forests, and their wider use can raise survival in afforestation.",
+  "strong": "Mycorrhizae are mutualistic associations between soil fungi and plant roots; in return for plant carbon, the fungus extends the root's reach into soil.\n\nTypes: (1) Ectomycorrhizae form a mantle and Hartig net around roots (pines, oaks, sal, eucalyptus); (2) arbuscular (endo) mycorrhizae penetrate cortical cells and form arbuscules (teak, bamboo, most tropical trees); (3) ericoid and orchid mycorrhizae in specialised habitats.\n\nRole in forest ecosystems:\n- Nutrient cycling: hyphae mobilise phosphorus, nitrogen and micronutrients (Zn, Cu) and access organic nutrients.\n- Water relations: greater drought tolerance of seedlings on degraded sites.\n- Protection: the mantle and antibiotics limit root pathogens; tolerance to heavy metals and salinity.\n- Soil structure and carbon: glomalin stabilises aggregates and stores soil carbon.\n- Common mycorrhizal networks (\"wood-wide web\") move carbon and signals between trees and support seedling establishment under canopy.\n- Succession: early colonisers need inoculum; loss of fungal partners slows regeneration.\n\n[Diagram: root cross-section showing mantle, Hartig net, arbuscules and extraradical hyphae linking two trees.]\n\nUse in Indian afforestation:\n- Nursery inoculation of pine, eucalyptus and casuarina seedlings in forest nurseries (state forest departments, ICFRE institutes).\n- Reclamation of mine spoils, fly-ash dumps and wastelands, where native inoculum is absent.\n- Agroforestry and the Green India Mission's degraded-forest restoration, where survival rates of planted seedlings are a known weakness.\n- Constraints: inoculum quality control, matching fungal strains to species and sites, and farmer/forester awareness.\n\nWay forward: site-specific inoculum banks, quality standards for biofertiliser inoculum, and monitoring seedling survival with and without inoculation.\n\nConclusion: mycorrhizae are the invisible infrastructure of forests; building them into nursery practice can make India's afforestation targets translate into surviving forests rather than planted numbers."
+ },
+ "model": "openai/gpt-oss-20b (temperature 0.2), MainsMarker rubric 05ddf6dfce27",
+ "runs": [
+  [
+   "weak",
+   0,
+   2.5
+  ],
+  [
+   "weak",
+   1,
+   1.5
+  ],
+  [
+   "weak",
+   2,
+   2.5
+  ],
+  [
+   "medium",
+   0,
+   7.5
+  ],
+  [
+   "medium",
+   1,
+   6.5
+  ],
+  [
+   "medium",
+   2,
+   7.5
+  ],
+  [
+   "strong",
+   0,
+   8.5
+  ],
+  [
+   "strong",
+   1,
+   8.5
+  ],
+  [
+   "strong",
+   2,
+   8.5
+  ]
+ ]
+}
