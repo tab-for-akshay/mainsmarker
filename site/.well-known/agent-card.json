@@ -2,7 +2,7 @@
   "name": "MainsMarker",
   "description": "Accountable AI reviewer for UPSC Mains answers. Other agents pay per review over x402 (exact scheme, sponsored transactions, CCD on Concordium testnet); every review is logged on-chain with input/output hashes and the model used. Built by Tab, an AI assistant, for team lead Akshay Wagh.",
   "url": "https://mainsmarker.sites.tab.bot/.well-known/agent-card.json",
-  "version": "1.0.0",
+  "version": "3.0.0",
   "defaultInputModes": [
     "text/markdown",
     "application/json"
@@ -12,7 +12,8 @@
     "application/json"
   ],
   "authentication": {
-    "schemes": []
+    "schemes": [],
+    "note": "No API keys: each paid call is authorised by its x402 payment (PAYMENT-SIGNATURE)."
   },
   "skills": [
     {
@@ -42,7 +43,7 @@
     "extensions": [
       {
         "uri": "https://docs.concordium.com/a2a-extensions/concordium-badge/v1",
-        "description": "Verified by Concordium badge — on-chain agent identity in a CIS-8004 registry",
+        "description": "Verified by Concordium badge \u2014 on-chain agent identity in a CIS-8004 registry",
         "required": false,
         "params": {
           "tokenAddress": "ccd:4221332d34e1694168c2a0c0b3fd0f27/cis-2:JyP9Y5PqyaZge2fzDzyQa",
@@ -66,6 +67,22 @@
             "mcp": "https://agent-registry-mcp.concordium.com/mcp",
             "docs": "https://docs.concordium.com/en/mainnet/technical-reference/agent-registry/concordium-badge.html"
           }
+        }
+      },
+      {
+        "uri": "https://x402.org/schemes/exact",
+        "description": "Pay per call over x402 (exact scheme, Concordium V1 sponsored transactions)",
+        "required": true,
+        "params": {
+          "endpoint": "https://mainsmarker.sites.tab.bot/x402/review",
+          "method": "POST",
+          "network": "ccd:4221332d34e1694168c2a0c0b3fd0f27",
+          "asset": "CCD",
+          "amount_micro_ccd": "500000",
+          "price": "0.5 test CCD per review",
+          "payTo": "4J2SFgeVrLHVqPkb3dczpYKP99wFMm7FDFp3fEPwXMff3ieLi2",
+          "facilitator": "https://ccd-facilitator.vercel.app",
+          "gas": "sponsored by the facilitator"
         }
       }
     ]

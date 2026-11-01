@@ -85,9 +85,10 @@ Conclusion: mycorrhizae are an invisible partner of forests, and their wider use
         <li data-k="402 Payment Required"><span class="dot">3</span><div>Ask, get HTTP 402 with a price<small>x402 PAYMENT-REQUIRED header</small></div></li>
         <li data-k="Check policy"><span class="dot">4</span><div>Check the spending policy<small>payTo = card wallet · price cap · daily budget read from chain</small></div></li>
         <li data-k="Sign payment"><span class="dot">5</span><div>Sign a sponsored transfer<small>buyer never needs CCD for gas</small></div></li>
-        <li data-k="Settled"><span class="dot">6</span><div>Facilitator verifies and settles<small>9 checks, finalised on-chain</small></div></li>
+        <li data-k="Settled"><span class="dot">6</span><div>Independent facilitator settles<small>independent service · 9 checks · pays the gas</small></div></li>
         <li data-k="Reviewed"><span class="dot">7</span><div>MainsMarker marks the answer<small>model recorded</small></div></li>
         <li data-k="Logged on-chain"><span class="dot">8</span><div>Audit record written on-chain<small>hashes of input and review, model, payment ref</small></div></li>
+        <li data-k="Buyer receipt"><span class="dot">·</span><div>Buyer anchors its own receipt<small>second, independent on-chain attestation</small></div></li>
       </ol>
       <p class="note" id="elapsed"></p>
     </div>
@@ -104,7 +105,7 @@ Conclusion: mycorrhizae are an invisible partner of forests, and their wider use
     <h3>Diagram tip</h3><p id="diagram"></p>
     <h3>Proof</h3>
     <div class="mono" id="proof"></div>
-    <button class="ghost" id="verify">Verify this review against the chain</button>
+    <button class="ghost" id="verify">Verify this review against the chain</button> <a id="vlink" hidden target="_blank" rel="noopener" class="note">Shareable verify link (opens the verifier pre-filled) ↗</a>
     <p id="vres" class="note"></p>
   </section>
 
@@ -128,6 +129,7 @@ Conclusion: mycorrhizae are an invisible partner of forests, and their wider use
     <h2>Verify any review</h2>
     <p class="note">Paste a review JSON (the <span class="mono">review</span> object an agent received) and its audit transaction hash. Your browser hashes the canonical JSON (keys sorted, no spaces) and compares it with the hash anchored on Concordium.</p>
     <label for="vtx">Audit transaction hash</label><input id="vtx" class="mono" style="width:100%" placeholder="64 hex characters">
+    <label for="vq">Question (optional, to check the input hash too)</label><textarea id="vq" style="min-height:50px"></textarea><label for="va">Answer (optional)</label><textarea id="va" style="min-height:70px"></textarea>
     <label for="vjson">Review JSON</label><textarea id="vjson" class="mono" style="min-height:90px" placeholder='{"score": 7.5, "max": 15, ...}'></textarea>
     <button class="ghost" id="vany">Check against the chain</button> <span id="vanyres" class="note"></span>
   </section>
@@ -200,7 +202,7 @@ function show(res){
   L('strengths',v.strengths);L('improvements',v.improvements);L('missing',v.missing_points);L('outline',v.model_outline);
   $('diagram').textContent=v.diagram_tip||'—';
   $('proof').innerHTML=`model: ${esc(res.model)}<br>review sha256: ${res.review_sha256}<br>payment: <a href="${res.payment.explorer}" target="_blank" rel="noopener">${short(res.payment.transaction)}</a> (payer ${short(res.payment.payer)}, gas sponsored by ${short(res.payment.sponsor)})<br>rubric: ${esc(res.rubric?res.rubric.version:'')} · sha256 ${short(res.rubric?res.rubric.sha256:'')} (<a href="/api/rubric" target="_blank">read it</a>)<br>audit record: ${res.audit.tx?`<a href="${res.audit.explorer}" target="_blank" rel="noopener">${short(res.audit.tx)}</a>`:'not written: '+esc(res.audit.error)}`;
-  $('vres').textContent='';$('result').scrollIntoView({behavior:'smooth'});
+  $('vres').textContent='';$('vlink').href=verifyLink(res,$('question').value,$('answer').value);$('vlink').hidden=false;$('result').scrollIntoView({behavior:'smooth'});
 }
 $('verify').onclick=async()=>{
   if(!last||!last.audit.tx)return;$('vres').textContent='Checking the chain…';
@@ -211,10 +213,21 @@ $('verify').onclick=async()=>{
   $('vres').textContent='The audit transaction is not final yet. Try again in a few seconds.';
 };
 async function statsLine(){try{const s=await (await fetch('/api/stats')).json();$('stats').textContent=`${s.paid_reviews} paid reviews · ${s.distinct_buyer_accounts} distinct buyer account(s) · ${s.revenue_test_ccd.toFixed(1)} test CCD earned`}catch(e){}}
-$('vany').onclick=async()=>{const tx=$('vtx').value.trim();let obj;try{obj=JSON.parse($('vjson').value)}catch(e){$('vanyres').textContent='That is not valid JSON.';return}
-  if(obj.review&&obj.audit)obj=obj.review;const local=await sha(canon(obj));$('vanyres').textContent='Checking…';
-  const a=await (await fetch('/api/audit/'+tx)).json();if(!a.found){$('vanyres').textContent='No MainsMarker audit memo in that transaction ('+esc(a.status||'not found')+').';return}
-  $('vanyres').innerHTML=a.record.out===local?`<span class="okt">✓ Match</span> · anchored ${short(a.record.out)} · model ${esc(a.record.m)} · rubric ${esc(a.record.rb||'v1')} · <a href="${a.explorer}" target="_blank" rel="noopener">tx</a>`:`<span class="badt">✗ No match</span> · yours ${short(local)} vs chain ${short(a.record.out)}`};
+async function verifyAny(){const tx=$('vtx').value.trim();let obj;try{obj=JSON.parse($('vjson').value)}catch(e){$('vanyres').textContent='That is not valid JSON.';return}
+  if(obj.review&&obj.audit)obj=obj.review;const local=await sha(canon(obj));$('vanyres').textContent='Checking the chain…';
+  let a;for(let k=0;k<10;k++){a=await (await fetch('/api/audit/'+tx)).json();if(a.found)break;await new Promise(r=>setTimeout(r,3000))}
+  if(!a.found){$('vanyres').textContent='No MainsMarker audit memo in that transaction ('+esc(a.status||'not found')+').';return}
+  let out=a.record.out===local?`<span class="okt">✓ Review matches</span> the anchored hash ${short(a.record.out)}`:`<span class="badt">✗ Review does not match</span> (yours ${short(local)} vs chain ${short(a.record.out)})`;
+  const q=$('vq').value.trim(),an=$('va').value.trim();
+  if(q&&an){const ih=await sha(canon({question:q,answer:an}));out+=a.record.in===ih?` · <span class="okt">✓ Input matches</span> (this review was produced for this question and answer)`:(a.record.in.length<64?' · input hash not in this older record':` · <span class="badt">✗ Input does not match</span>`)}
+  out+=` · model ${esc(a.record.m)} · rubric ${esc(a.record.rb||'v1')} · <a href="${a.explorer}" target="_blank" rel="noopener">audit tx</a>`;
+  try{const c=await (await fetch('/api/cosign/'+tx)).json();out+=c.found?` · <span class="okt">✓ Buyer receipt</span> from ${short(c.payer)} agrees (<a href="${c.explorer}" target="_blank" rel="noopener">tx</a>)`:' · no buyer receipt'}catch(e){}
+  $('vanyres').innerHTML=out}
+$('vany').onclick=verifyAny;
+function b64u(s){return btoa(unescape(encodeURIComponent(s))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'')}
+function unb64u(s){return decodeURIComponent(escape(atob(s.replace(/-/g,'+').replace(/_/g,'/'))))}
+function verifyLink(res,q,an){return location.origin+'/#v='+b64u(JSON.stringify({tx:res.audit.tx,review:res.review,q,a:an}))}
+if(location.hash.startsWith('#v=')){try{const v=JSON.parse(unb64u(location.hash.slice(3)));$('vtx').value=v.tx;$('vjson').value=JSON.stringify(v.review,null,1);$('vq').value=v.q||'';$('va').value=v.a||'';setTimeout(()=>{$('vany').scrollIntoView({behavior:'smooth'});verifyAny()},600)}catch(e){}}
 info();audit();statsLine();
 </script>
 </body>

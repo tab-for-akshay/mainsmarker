@@ -20,6 +20,11 @@ const DISCLOSURE = 'Built by Tab, an AI assistant, for team lead Akshay Wagh.';
 
 let _client;
 const grpc = () => (_client ||= new ConcordiumGRPCWebClient(GRPC, 20000, { timeout: 30000 }));
+// The facilitator is an independent service (own cloud, own account): https://ccd-facilitator.vercel.app
+const FACILITATOR_URL = 'https://ccd-facilitator.vercel.app';
+let _sup;
+async function facSupported() { if (!_sup) { const r = await fetch(FACILITATOR_URL + '/api/supported'); _sup = await r.json(); } return _sup; }
+async function facCall(op, paymentPayload, paymentRequirements) { const r = await fetch(`${FACILITATOR_URL}/api/${op}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ x402Version: 2, paymentPayload, paymentRequirements }) }); return await r.json(); }
 let _fac;
 function facilitator() {
   if (!_fac) {
@@ -46,7 +51,7 @@ async function requirements(resourceUrl) {
   const server = new X402Server();
   const amt = await server.parsePrice({ amount: PRICE_MICRO, asset: 'CCD' }, NET);
   let req = { scheme: 'exact', network: NET, payTo: CFG.accounts.mainsmarker, amount: amt.amount, asset: amt.asset, maxTimeoutSeconds: 300, extra: amt.extra || {} };
-  req = await server.enhancePaymentRequirements(req, { x402Version: 2, scheme: 'exact', network: NET, extra: facilitator().getExtra(NET) }, []);
+  req = await server.enhancePaymentRequirements(req, { x402Version: 2, scheme: 'exact', network: NET, extra: (await facSupported()).kinds[0].extra }, []);
   return {
     x402Version: 2,
     error: 'Payment required: 0.5 test CCD per answer review (gas sponsored by the facilitator).',
@@ -131,6 +136,14 @@ async function anchorAudit(rec) {
   const h = await c.sendAccountTransaction(tx, sig);
   return TransactionHash.toHexString ? TransactionHash.toHexString(h) : h.toString();
 }
+async function refund(payer, payTx) {
+  const me = AccountAddress.fromBase58(CFG.accounts.mainsmarker); const c = grpc();
+  const nonce = (await c.getNextAccountNonce(me)).nonce;
+  const memo = JSON.stringify({ t: 'mm/refund', pay: payTx.slice(0, 16), why: 'review failed' });
+  const tx = { type: AccountTransactionType.TransferWithMemo, header: { expiry: TransactionExpiry.futureMinutes(10), nonce, sender: me }, payload: { amount: CcdAmount.fromMicroCcd(BigInt(PRICE_MICRO)), toAddress: AccountAddress.fromBase58(payer), memo: new DataBlob(cborText(memo)) } };
+  const h = await c.sendAccountTransaction(tx, await signTransaction(tx, buildBasicAccountSigner(SECRETS.MM_KEY)));
+  return TransactionHash.toHexString ? TransactionHash.toHexString(h) : h.toString();
+}
 async function auditLog(limit = 25) {
   const r = await fetch(`${WP}/v1/accTransactions/${CFG.accounts.mainsmarker}?order=descending&limit=100`);
   const j = await r.json();
@@ -143,6 +156,17 @@ async function auditLog(limit = 25) {
     if (out.length >= limit) break;
   }
   return out;
+}
+async function cosign(auditTx) {
+  const a = await auditByTx(auditTx); if (!a.found) return { found: false, reason: 'no audit memo' };
+  const mm = await (await fetch(`${WP}/v1/accTransactions/${CFG.accounts.mainsmarker}?order=descending&limit=200`)).json();
+  const pay = (mm.transactions || []).find(t => t.transactionHash.startsWith(a.record.pay) && t.details?.transferDestination === CFG.accounts.mainsmarker);
+  if (!pay) return { found: false, reason: 'payment not found' };
+  const payer = pay.details.transferSource;
+  const pj = await (await fetch(`${WP}/v1/accTransactions/${payer}?order=descending&limit=200`)).json();
+  for (const t of pj.transactions || []) { const m = t.details?.memo; if (!m) continue; let r; try { r = JSON.parse(decodeCborTextHex(m)); } catch { continue; }
+    if (r?.t === 'sb/1' && r.audit === auditTx) return { found: true, payer, receipt_tx: t.transactionHash, explorer: txUrl(t.transactionHash), buyer_hash: r.out, seller_hash: a.record.out, agree: r.out === a.record.out, at: new Date(t.blockTime * 1000).toISOString() }; }
+  return { found: false, payer, reason: 'the payer has not anchored a receipt for this review (only StudyBuddy does so far)' };
 }
 async function stats() {
   const r = await fetch(`${WP}/v1/accTransactions/${CFG.accounts.mainsmarker}?order=descending&limit=1000`);
@@ -189,13 +213,18 @@ async function handleX402(request, origin) {
   inFlight++; try { return await paidReview(payload, pr, req, { question, answer, body, t0 }); } finally { inFlight--; }
 }
 async function paidReview(payload, pr, req, { question, answer, body, t0 }) {
-  const fac = facilitator();
-  const v = await fac.verify(payload, req);
-  if (!v.isValid) return json({ ...pr, error: 'Payment rejected: ' + (v.invalidReason || 'invalid') }, 402);
-  const s = await fac.settle(payload, req);
+  const v = await facCall('verify', payload, req);
+  if (!v.isValid) return json({ ...pr, error: 'Payment rejected: ' + (v.invalidReason || 'invalid') + (v.invalidMessage ? ' — ' + v.invalidMessage : '') }, 402);
+  const s = await facCall('settle', payload, req);
   if (!s.success) return json({ ...pr, error: 'Settlement failed: ' + (s.errorReason || 'unknown') }, 402);
   const tPaid = now();
-  const { review: rv, model, fallbacks } = await review({ question, answer, marks: body.marks, mode: body.mode });
+  let rvOut;
+  try { rvOut = await review({ question, answer, marks: body.marks, mode: body.mode }); }
+  catch (e) { // paid but could not deliver: refund the buyer on-chain, with a memo that says why
+    let refundTx = null; try { refundTx = await refund(s.payer, s.transaction); } catch (e2) { }
+    return json({ error: 'Review failed after payment; refunded.', reason: String(e.message || e).slice(0, 200), payment: { transaction: s.transaction, explorer: txUrl(s.transaction) }, refund: refundTx ? { tx: refundTx, explorer: txUrl(refundTx) } : { error: 'refund not sent; will be retried manually' } }, 502);
+  }
+  const { review: rv, model, fallbacks } = rvOut;
   const tReviewed = now();
   const reviewId = s.transaction.slice(0, 10);
   const inHash = await sha256hex(canon({ question, answer }));
@@ -264,9 +293,10 @@ export default {
       if (url.pathname === '/x402/review' && request.method === 'POST') return await handleX402(request, origin);
       if (url.pathname === '/x402/review') return json(await requirements(origin + '/x402/review'), 402, { 'PAYMENT-REQUIRED': encodePaymentRequiredHeader(await requirements(origin + '/x402/review')) });
       if (url.pathname === '/api/demo/buy') return json({ moved: 'The buyer agent now runs as its own service', url: CFG.studybuddy_url + '/api/buy' }, 410);
+      if (url.pathname.startsWith('/api/cosign/')) return json(await cosign(url.pathname.split('/').pop()));
       if (url.pathname === '/api/stats') return json(await stats());
       if (url.pathname === '/api/rubric') return json({ version: RUBRIC_VERSION, sha256: await rubricHash(), anchored_prefix: (await rubricHash()).slice(0, 12), system_prompt: SYS, note: 'Every audit memo carries rb = first 12 hex of this hash, so a review can be tied to the exact rubric that produced it.' });
-      if (url.pathname === '/api/facilitator') return json({ sponsor_account: CFG.accounts.facilitator, explorer: accUrl(CFG.accounts.facilitator), rules_checked_before_sponsoring: FACILITATOR_RULES, abuse_limits: LIMITS, scheme: 'x402 exact, V1 sponsored transactions (@x402/concordium)' });
+      if (url.pathname === '/api/facilitator') return json({ facilitator_service: FACILITATOR_URL, sponsor_account: CFG.accounts.facilitator, explorer: accUrl(CFG.accounts.facilitator), rules_checked_before_sponsoring: FACILITATOR_RULES, abuse_limits: LIMITS, scheme: 'x402 exact, V1 sponsored transactions (@x402/concordium)' });
       if (url.pathname === '/api/audit') return json(await auditLog(Math.min(50, Number(url.searchParams.get('limit')) || 20)));
       if (url.pathname.startsWith('/api/audit/')) return json(await auditByTx(url.pathname.split('/').pop()));
       if (url.pathname === '/api/verify' && request.method === 'POST') { const b = await request.json(); return json(await verifyReview(b.audit_tx, b.review)); }
